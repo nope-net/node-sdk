@@ -67,7 +67,7 @@ describe.skipIf(!runIntegration)('NopeClient Integration', () => {
     if (result.crisis_resources.length > 0) {
       console.log('First resource:', result.crisis_resources[0].name);
     }
-  });
+  }, 30000); // 30 second timeout
 
   it('should evaluate plain text input', async () => {
     const result = await client.evaluate({
@@ -95,7 +95,7 @@ describe.skipIf(!runIntegration)('NopeClient Integration', () => {
         console.log(`  First: ${result.crisis_resources[0].name}`);
       }
     }
-  });
+  }, 60000); // 60 second timeout for 4 sequential API calls
 
   it('should parse domain assessments correctly', async () => {
     const result = await client.evaluate({
