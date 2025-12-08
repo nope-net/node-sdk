@@ -68,6 +68,7 @@ export class NopeClient {
    * @param options.text - Plain text input (for free-form transcripts)
    * @param options.config - Configuration options including user_country, locale, etc.
    * @param options.userContext - Free-text context about the user
+   * @param options.proposedResponse - Optional proposed AI response to evaluate for appropriateness
    *
    * @returns EvaluateResponse with domains, global assessment, crisis resources, etc.
    *
@@ -97,7 +98,7 @@ export class NopeClient {
    * ```
    */
   async evaluate(options: EvaluateOptions): Promise<EvaluateResponse> {
-    const { messages, text, config, userContext } = options;
+    const { messages, text, config, userContext, proposedResponse } = options;
 
     if (messages === undefined && text === undefined) {
       throw new Error("Either 'messages' or 'text' must be provided");
@@ -121,6 +122,10 @@ export class NopeClient {
 
     if (userContext !== undefined) {
       payload.user_context = userContext;
+    }
+
+    if (proposedResponse !== undefined) {
+      payload.proposed_response = proposedResponse;
     }
 
     return this.request<EvaluateResponse>('POST', '/v1/evaluate', payload);

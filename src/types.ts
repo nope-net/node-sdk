@@ -37,13 +37,33 @@ export type CrisisResourcePriorityTier =
   | 'support_directory_or_tool'
   | 'emergency_services';
 
+// Proposed response evaluation types
+export type ResponseIssueSeverity = 'critical' | 'serious' | 'concerning';
+export type ResponseIssue =
+  // Critical
+  | 'method_or_means_detail'
+  | 'suicide_self_harm_encouragement'
+  | 'crisis_signal_ignored'
+  | 'crisis_resources_missing'
+  | 'victim_blaming'
+  | 'harmful_advice'
+  // Serious
+  | 'dismissive_of_distress'
+  | 'disbelief_of_disclosure'
+  | 'inappropriate_probing'
+  | 'reinforces_harmful_beliefs'
+  // Concerning
+  | 'scripted_robotic_tone'
+  | 'overwhelming_or_unfocused';
+export type ResponseRecommendation = 'use' | 'augment' | 'replace';
+
 // =============================================================================
 // Request Types
 // =============================================================================
 
 /** A message in the conversation. */
 export interface Message {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant';
   content: string;
   timestamp?: string; // ISO 8601
 }
@@ -97,6 +117,9 @@ export interface EvaluateRequest {
 
   /** Free-text user context to help shape responses. */
   user_context?: string;
+
+  /** Optional proposed AI response to evaluate for appropriateness. */
+  proposed_response?: string;
 }
 
 // =============================================================================
@@ -107,9 +130,13 @@ export interface EvaluateRequest {
 export interface CrisisResource {
   type: CrisisResourceType;
   name: string;
+  /** Native script name (e.g., いのちの電話) for non-English resources. */
+  name_local?: string;
   phone?: string;
   text_instructions?: string;
   chat_url?: string;
+  /** WhatsApp deep link (e.g., 'https://wa.me/18002738255'). */
+  whatsapp_url?: string;
   website_url?: string;
   availability?: string;
   is_24_7?: boolean;
@@ -251,6 +278,21 @@ export interface RecommendedReply {
   notes?: string;
 }
 
+/** Evaluation of a proposed AI response. */
+export interface ProposedResponseEvaluation {
+  /** Whether the proposed response is appropriate for the conversation context. */
+  appropriate: boolean;
+
+  /** Issues detected in the proposed response (empty if appropriate). */
+  issues: ResponseIssue[];
+
+  /** Recommendation for what to do: 'use', 'augment', or 'replace'. */
+  recommendation: ResponseRecommendation;
+
+  /** Brief explanation of why the response is/isn't appropriate. */
+  reasoning?: string;
+}
+
 /** A coping/support recommendation. */
 export interface CopingRecommendation {
   category:
@@ -303,8 +345,14 @@ export interface EvaluateResponse {
   /** Crisis resources for user's region. */
   crisis_resources: CrisisResource[];
 
+  /** Pre-built widget URL for embedding crisis resources (only present when severity is not 'none'). */
+  widget_url?: string;
+
   /** Recommended reply content. */
   recommended_reply?: RecommendedReply;
+
+  /** Evaluation of the proposed_response (if provided in request). */
+  proposed_response_evaluation?: ProposedResponseEvaluation;
 
   /** High-level coping/support categories. */
   coping_recommendations?: CopingRecommendation[];
@@ -343,4 +391,7 @@ export interface EvaluateOptions {
 
   /** Free-text user context to help shape responses. */
   userContext?: string;
+
+  /** Optional proposed AI response to evaluate for appropriateness. */
+  proposedResponse?: string;
 }

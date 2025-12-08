@@ -49,6 +49,9 @@ export type {
   CrisisResourceType,
   CrisisResourceKind,
   CrisisResourcePriorityTier,
+  ResponseIssueSeverity,
+  ResponseIssue,
+  ResponseRecommendation,
   // Request types
   Message,
   EvaluateConfig,
@@ -73,6 +76,7 @@ export type {
   SafeguardingFlags,
   ProtectiveFactorsInfo,
   RecommendedReply,
+  ProposedResponseEvaluation,
   CopingRecommendation,
   ResponseMetadata,
   // Client options
