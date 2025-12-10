@@ -6,7 +6,7 @@
 
 import { NopeClient } from './src/client.js';
 
-const API_URL = process.env.NOPE_API_URL ?? 'http://localhost:8788';
+const API_URL = process.env.NOPE_API_URL ?? 'http://localhost:3700';
 
 console.log(`Testing against: ${API_URL}`);
 

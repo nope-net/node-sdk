@@ -4,7 +4,7 @@
  * Run with: pnpm test:integration
  *
  * Prerequisites:
- * - Local API running at http://localhost:8788
+ * - Local API running at http://localhost:3700
  * - Or set NOPE_API_URL environment variable
  */
 
@@ -12,7 +12,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { NopeClient } from '../src/client.js';
 import type { EvaluateResponse } from '../src/types.js';
 
-const API_URL = process.env.NOPE_API_URL ?? 'http://localhost:8788';
+const API_URL = process.env.NOPE_API_URL ?? 'http://localhost:3700';
 
 // Skip integration tests by default unless API is available
 const runIntegration = process.env.RUN_INTEGRATION === 'true';
