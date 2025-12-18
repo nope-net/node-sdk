@@ -41,8 +41,8 @@ const result = await client.evaluate({
   config: { user_country: 'US' }
 });
 
-console.log(`Severity: ${result.global.overall_severity}`);  // e.g., "moderate", "high"
-console.log(`Imminence: ${result.global.overall_imminence}`);  // e.g., "subacute", "urgent"
+console.log(`Severity: ${result.summary.speaker_severity}`);  // e.g., "moderate", "high"
+console.log(`Imminence: ${result.summary.speaker_imminence}`);  // e.g., "subacute", "urgent"
 
 // Access crisis resources
 for (const resource of result.crisis_resources) {
@@ -69,7 +69,6 @@ const result = await client.evaluate({
     user_country: 'US',            // ISO country code for crisis resources
     locale: 'en-US',               // Language/region
     user_age_band: 'adult',        // "adult", "minor", or "unknown"
-    return_assistant_reply: true,  // Include recommended safe reply
     dry_run: false,                // If true, don't log or trigger webhooks
   },
   userContext: 'User has history of anxiety',  // Optional context
@@ -81,15 +80,21 @@ const result = await client.evaluate({
 ```typescript
 const result = await client.evaluate({ messages: [...], config: { user_country: 'US' } });
 
-// Global assessment
-result.global.overall_severity    // "none", "mild", "moderate", "high", "critical"
-result.global.overall_imminence   // "not_applicable", "chronic", "subacute", "urgent", "emergency"
-result.global.primary_concerns    // ["suicidal ideation", "self-harm"]
+// Summary (speaker-focused)
+result.summary.speaker_severity    // "none", "mild", "moderate", "high", "critical"
+result.summary.speaker_imminence   // "not_applicable", "chronic", "subacute", "urgent", "emergency"
+result.summary.any_third_party_risk  // boolean
+result.summary.primary_concerns    // Narrative summary string
 
-// Domain-specific assessments
-for (const domain of result.domains) {
-  console.log(`${domain.domain}: ${domain.severity} (${domain.imminence})`);
-  console.log(`  Risk features: ${domain.risk_features.join(', ')}`);
+// Communication style
+result.communication.styles        // [{ style: "direct", confidence: 0.9 }, ...]
+result.communication.language      // "en"
+
+// Individual risks (subject + type)
+for (const risk of result.risks) {
+  console.log(`${risk.subject} ${risk.type}: ${risk.severity} (${risk.imminence})`);
+  console.log(`  Confidence: ${risk.confidence}, Subject confidence: ${risk.subject_confidence}`);
+  console.log(`  Features: ${risk.features.join(', ')}`);
 }
 
 // Crisis resources (matched to user's country)
@@ -109,8 +114,11 @@ if (result.recommended_reply) {
 }
 
 // Legal/safeguarding flags
-if (result.legal_flags?.child_safeguarding) {
-  console.log(`Child safeguarding: ${result.legal_flags.child_safeguarding.urgency}`);
+if (result.legal_flags?.ipv?.indicated) {
+  console.log(`IPV detected - lethality: ${result.legal_flags.ipv.lethality_risk}`);
+}
+if (result.legal_flags?.mandatory_reporting?.indicated) {
+  console.log(`Mandatory reporting: ${result.legal_flags.mandatory_reporting.context}`);
 }
 ```
 
@@ -163,24 +171,42 @@ This SDK is written in TypeScript and exports all types:
 ```typescript
 import type {
   EvaluateResponse,
-  GlobalAssessment,
-  DomainAssessment,
+  Risk,
+  Summary,
+  CommunicationAssessment,
   CrisisResource,
   Severity,
   Imminence,
+  RiskSubject,
+  RiskType,
 } from '@nope-net/sdk';
 ```
 
-## Risk Domains
+## Risk Taxonomy
 
-NOPE classifies risk across four domains:
+NOPE uses an orthogonal taxonomy separating WHO is at risk from WHAT type of harm:
 
-| Domain | Description |
-|--------|-------------|
-| `self` | Risk to self (suicide, self-harm, self-neglect) |
-| `others` | Risk to others (violence, threats) |
-| `dependent_at_risk` | Risk to dependents (child, vulnerable adult) |
-| `victimisation` | Being harmed by others (IPV, trafficking, abuse) |
+### Subjects (who is at risk)
+
+| Subject | Description |
+|---------|-------------|
+| `self` | The speaker is at risk |
+| `other` | Someone else is at risk (friend, family, stranger) |
+| `unknown` | Ambiguous - "asking for a friend" territory |
+
+### Risk Types (what type of harm)
+
+| Type | Description |
+|------|-------------|
+| `suicide` | Self-directed lethal intent |
+| `self_harm` | Non-suicidal self-injury (NSSI) |
+| `self_neglect` | Severe self-care failure |
+| `violence` | Harm directed at others |
+| `abuse` | Physical, emotional, sexual, financial abuse |
+| `sexual_violence` | Rape, sexual assault, coerced acts |
+| `neglect` | Failure to provide care for dependents |
+| `exploitation` | Trafficking, forced labor, sextortion |
+| `stalking` | Persistent unwanted contact/surveillance |
 
 ## Severity & Imminence
 
@@ -204,7 +230,7 @@ NOPE classifies risk across four domains:
 
 ## API Reference
 
-For full API documentation, see [nope.net/docs](https://nope.net/docs).
+For full API documentation, see [docs.nope.net](https://docs.nope.net).
 
 ## Versioning
 
@@ -220,6 +246,6 @@ MIT - see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- Documentation: [nope.net/docs](https://nope.net/docs)
+- Documentation: [docs.nope.net](https://docs.nope.net)
 - Dashboard: [dashboard.nope.net](https://dashboard.nope.net)
 - Issues: [github.com/nope-net/node-sdk/issues](https://github.com/nope-net/node-sdk/issues)

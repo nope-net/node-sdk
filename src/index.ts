@@ -14,7 +14,7 @@
  *   config: { user_country: 'US' }
  * });
  *
- * console.log(`Severity: ${result.global.overall_severity}`);
+ * console.log(`Severity: ${result.summary.speaker_severity}`);
  * for (const resource of result.crisis_resources) {
  *   console.log(`  ${resource.name}: ${resource.phone}`);
  * }
@@ -41,45 +41,41 @@ export type {
   // Enums/Literals
   Severity,
   Imminence,
-  RiskDomain,
-  SelfSubtype,
-  DependentSubtype,
-  VictimisationSubtype,
-  EvidenceGrade,
+  RiskSubject,
+  RiskType,
   CrisisResourceType,
   CrisisResourceKind,
   CrisisResourcePriorityTier,
-  ResponseIssueSeverity,
-  ResponseIssue,
-  ResponseRecommendation,
   // Request types
   Message,
   EvaluateConfig,
   EvaluateRequest,
-  // Response types
+  // Core response types
   EvaluateResponse,
-  GlobalAssessment,
-  DomainAssessment,
-  BaseDomainAssessment,
-  SelfDomainAssessment,
-  OthersDomainAssessment,
-  DependentAtRiskAssessment,
-  VictimisationAssessment,
+  Risk,
+  Summary,
+  CommunicationAssessment,
+  CommunicationStyleAssessment,
+  // Supporting types
   CrisisResource,
   LegalFlags,
-  ThirdPartyThreat,
-  IntimatePartnerViolence,
-  ChildSafeguarding,
-  VulnerableAdultSafeguarding,
-  AnimalCrueltyIndicator,
-  PresentationModifiers,
-  SafeguardingFlags,
+  IPVFlags,
+  MandatoryReportingFlags,
+  ThirdPartyThreatFlags,
   ProtectiveFactorsInfo,
+  FilterResult,
   RecommendedReply,
-  ProposedResponseEvaluation,
-  CopingRecommendation,
   ResponseMetadata,
   // Client options
   NopeClientOptions,
   EvaluateOptions,
+} from './types.js';
+
+// Utility functions and constants
+export {
+  SEVERITY_SCORES,
+  IMMINENCE_SCORES,
+  calculateSpeakerSeverity,
+  calculateSpeakerImminence,
+  hasThirdPartyRisk,
 } from './types.js';

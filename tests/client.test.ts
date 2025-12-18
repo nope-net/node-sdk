@@ -81,20 +81,26 @@ describe('NopeClient', () => {
         status: 200,
         text: async () =>
           JSON.stringify({
-            domains: [
+            communication: {
+              styles: [{ style: 'direct', confidence: 0.9 }],
+              language: 'en',
+            },
+            risks: [
               {
-                domain: 'self',
-                self_subtype: 'suicidal_or_self_injury',
+                subject: 'self',
+                subject_confidence: 0.95,
+                type: 'suicide',
                 severity: 'moderate',
                 imminence: 'subacute',
                 confidence: 0.85,
-                risk_features: ['hopelessness'],
+                features: ['hopelessness', 'passive_ideation'],
               },
             ],
-            global: {
-              overall_severity: 'moderate',
-              overall_imminence: 'subacute',
-              primary_concerns: ['suicidal ideation'],
+            summary: {
+              speaker_severity: 'moderate',
+              speaker_imminence: 'subacute',
+              any_third_party_risk: false,
+              primary_concerns: 'Suicidal ideation with passive thoughts',
             },
             confidence: 0.85,
             crisis_resources: [
@@ -113,10 +119,11 @@ describe('NopeClient', () => {
         config: { user_country: 'US' },
       });
 
-      expect(result.global.overall_severity).toBe('moderate');
-      expect(result.global.overall_imminence).toBe('subacute');
-      expect(result.domains).toHaveLength(1);
-      expect(result.domains[0].domain).toBe('self');
+      expect(result.summary.speaker_severity).toBe('moderate');
+      expect(result.summary.speaker_imminence).toBe('subacute');
+      expect(result.risks).toHaveLength(1);
+      expect(result.risks[0].subject).toBe('self');
+      expect(result.risks[0].type).toBe('suicide');
       expect(result.crisis_resources).toHaveLength(1);
       expect(result.crisis_resources[0].phone).toBe('988');
 
@@ -138,11 +145,16 @@ describe('NopeClient', () => {
         status: 200,
         text: async () =>
           JSON.stringify({
-            domains: [],
-            global: {
-              overall_severity: 'none',
-              overall_imminence: 'not_applicable',
-              primary_concerns: [],
+            communication: {
+              styles: [{ style: 'clinical', confidence: 0.8 }],
+              language: 'en',
+            },
+            risks: [],
+            summary: {
+              speaker_severity: 'none',
+              speaker_imminence: 'not_applicable',
+              any_third_party_risk: false,
+              primary_concerns: 'No concerns identified',
             },
             confidence: 0.95,
             crisis_resources: [],
@@ -154,7 +166,7 @@ describe('NopeClient', () => {
         text: 'Patient is doing well today.',
       });
 
-      expect(result.global.overall_severity).toBe('none');
+      expect(result.summary.speaker_severity).toBe('none');
     });
 
     it('should throw NopeAuthError on 401', async () => {
@@ -180,9 +192,7 @@ describe('NopeClient', () => {
       });
 
       const client = new NopeClient({ apiKey: 'test_key' });
-      await expect(
-        client.evaluate({ messages: [] })
-      ).rejects.toThrow(NopeValidationError);
+      await expect(client.evaluate({ messages: [] })).rejects.toThrow(NopeValidationError);
     });
 
     it('should throw NopeRateLimitError on 429', async () => {

@@ -1,33 +1,85 @@
 /**
- * NOPE SDK Types
+ * NOPE SDK Types (v1 API)
  *
- * TypeScript interfaces for API requests and responses.
+ * Uses orthogonal subject/type separation:
+ * - WHO is at risk (subject: self | other | unknown)
+ * - WHAT type of harm (type: suicide | violence | abuse | ...)
  */
 
 // =============================================================================
-// Enums / Literals
+// Core Enums / Literals
 // =============================================================================
 
+/**
+ * Who is at risk
+ *
+ * - self: The speaker is at risk
+ * - other: Someone else is at risk (friend, family, stranger)
+ * - unknown: Ambiguous - classic "asking for a friend" territory
+ */
+export type RiskSubject = 'self' | 'other' | 'unknown';
+
+/**
+ * What type of harm
+ *
+ * 9 harm-based types (not intermediate states or conditions):
+ * - suicide: Self-directed lethal intent (C-SSRS levels derivable from features)
+ * - self_harm: Non-suicidal self-injury (NSSI)
+ * - self_neglect: Severe self-care failure with safeguarding concerns
+ * - violence: Harm directed at others (threats, assault, homicide)
+ * - abuse: Physical, emotional, sexual, financial abuse patterns
+ * - sexual_violence: Rape, sexual assault, coerced sexual acts
+ * - neglect: Failure to provide care for dependents
+ * - exploitation: Trafficking, forced labor, sextortion, grooming
+ * - stalking: Persistent unwanted contact/surveillance
+ */
+export type RiskType =
+  | 'suicide'
+  | 'self_harm'
+  | 'self_neglect'
+  | 'violence'
+  | 'abuse'
+  | 'sexual_violence'
+  | 'neglect'
+  | 'exploitation'
+  | 'stalking';
+
+/**
+ * Communication style - how the user is expressing themselves
+ *
+ * Orthogonal to risk assessment - informs response style, not risk level.
+ */
+export type CommunicationStyle =
+  | 'direct' // Explicit first-person ("I want to die")
+  | 'humor' // Dark humor, memes, "lol kms"
+  | 'fiction' // Creative writing, poetry, roleplay
+  | 'hypothetical' // "What if someone...", philosophical
+  | 'distanced' // "Asking for a friend", third-party framing
+  | 'clinical' // Professional/medical language
+  | 'minimized' // Hedged, softened ("not that I would, but...")
+  | 'adversarial'; // Jailbreak attempts, encoded content
+
+/** Severity scale (how bad) */
 export type Severity = 'none' | 'mild' | 'moderate' | 'high' | 'critical';
+
+/** Imminence scale (how soon) */
 export type Imminence = 'not_applicable' | 'chronic' | 'subacute' | 'urgent' | 'emergency';
-export type RiskDomain = 'self' | 'others' | 'dependent_at_risk' | 'victimisation';
-export type SelfSubtype = 'suicidal_or_self_injury' | 'self_neglect' | 'other';
-export type DependentSubtype = 'child' | 'adult_at_risk' | 'animal_or_other';
-export type VictimisationSubtype =
-  | 'IPV_intimate_partner'
-  | 'family_non_intimate'
-  | 'trafficking_exploitation'
-  | 'community_violence'
-  | 'institutional_abuse'
-  | 'other';
+
+/** Evidence grade for legal/clinical flags */
 export type EvidenceGrade = 'strong' | 'moderate' | 'weak' | 'consensus' | 'none';
+
+/** Crisis resource type */
 export type CrisisResourceType =
   | 'emergency_number'
   | 'crisis_line'
   | 'text_line'
   | 'chat_service'
   | 'support_service';
+
+/** Crisis resource kind */
 export type CrisisResourceKind = 'helpline' | 'reporting_portal' | 'directory' | 'self_help_site';
+
+/** Crisis resource priority tier */
 export type CrisisResourcePriorityTier =
   | 'primary_national_crisis'
   | 'secondary_national_crisis'
@@ -37,105 +89,209 @@ export type CrisisResourcePriorityTier =
   | 'support_directory_or_tool'
   | 'emergency_services';
 
-// Proposed response evaluation types
-export type ResponseIssueSeverity = 'critical' | 'serious' | 'concerning';
-export type ResponseIssue =
-  // Critical
-  | 'method_or_means_detail'
-  | 'suicide_self_harm_encouragement'
-  | 'crisis_signal_ignored'
-  | 'crisis_resources_missing'
-  | 'victim_blaming'
-  | 'harmful_advice'
-  // Serious
-  | 'dismissive_of_distress'
-  | 'disbelief_of_disclosure'
-  | 'inappropriate_probing'
-  | 'reinforces_harmful_beliefs'
-  // Concerning
-  | 'scripted_robotic_tone'
-  | 'overwhelming_or_unfocused';
-export type ResponseRecommendation = 'use' | 'augment' | 'replace';
-
 // =============================================================================
-// Request Types
+// Risk Structure
 // =============================================================================
 
-/** A message in the conversation. */
-export interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp?: string; // ISO 8601
+/**
+ * A single identified risk
+ *
+ * Each risk represents one subject + type combination with its assessment.
+ * A conversation can have multiple risks (e.g., IPV victim with suicidal ideation).
+ */
+export interface Risk {
+  /** Who is at risk */
+  subject: RiskSubject;
+
+  /**
+   * Confidence in subject determination (0.0-1.0)
+   *
+   * Low values indicate ambiguity:
+   * - 0.9+ = Clear ("I want to kill myself" → self)
+   * - 0.5-0.7 = Moderate ("Asking for a friend" → likely self, but uncertain)
+   * - <0.5 = Very uncertain
+   */
+  subject_confidence: number;
+
+  /** What type of harm */
+  type: RiskType;
+
+  /** How severe (none → critical) */
+  severity: Severity;
+
+  /** How soon (not_applicable → emergency) */
+  imminence: Imminence;
+
+  /** Confidence in this risk assessment (0.0-1.0) */
+  confidence: number;
+
+  /** Evidence features supporting this risk */
+  features: string[];
 }
 
-/** Configuration for evaluation request. */
-export interface EvaluateConfig {
-  /** User's country for crisis resources (ISO country code). */
-  user_country?: string;
+// =============================================================================
+// Communication Structure
+// =============================================================================
 
-  /** Locale for language/region (e.g., 'en-US', 'es-MX'). */
+/** Communication style with confidence */
+export interface CommunicationStyleAssessment {
+  style: CommunicationStyle;
+  confidence: number;
+}
+
+/** Communication analysis */
+export interface CommunicationAssessment {
+  /** Detected communication styles (may have multiple) */
+  styles: CommunicationStyleAssessment[];
+
+  /** Detected language (ISO 639-1) */
+  language: string;
+
+  /** Detected locale (e.g., 'en-US') */
   locale?: string;
-
-  /** User age band (affects response templates). Default: 'adult'. */
-  user_age_band?: 'adult' | 'minor' | 'unknown';
-
-  /** Policy ID to use. Default: 'default_mh'. */
-  policy_id?: string;
-
-  /** Dry run mode (evaluate but don't log/trigger webhooks). Default: false. */
-  dry_run?: boolean;
-
-  /** Whether to return a safe assistant reply. Default: true. */
-  return_assistant_reply?: boolean;
-
-  /** How NOPE should generate the recommended reply. */
-  assistant_safety_mode?: 'template' | 'generate';
-
-  /** Use multiple judges for higher confidence. Default: false. */
-  use_multiple_judges?: boolean;
-
-  /** Specify exact models to use (bypasses adaptive selection). */
-  models?: string[];
-
-  /** Customer-provided conversation ID for webhook correlation. */
-  conversation_id?: string;
-
-  /** Customer-provided end-user ID for webhook correlation. */
-  end_user_id?: string;
-}
-
-/** Request to /v1/evaluate endpoint. */
-export interface EvaluateRequest {
-  /** Conversation messages. Either messages OR text must be provided. */
-  messages?: Message[];
-
-  /** Plain text input. Either messages OR text must be provided. */
-  text?: string;
-
-  /** Configuration options. */
-  config: EvaluateConfig;
-
-  /** Free-text user context to help shape responses. */
-  user_context?: string;
-
-  /** Optional proposed AI response to evaluate for appropriateness. */
-  proposed_response?: string;
 }
 
 // =============================================================================
-// Response Types
+// Summary Structure
 // =============================================================================
 
-/** A crisis resource (helpline, text line, etc.). */
+/**
+ * Quick summary derived from risks array
+ *
+ * speaker_severity/imminence are calculated from risks where subject='self'
+ * and subject_confidence > 0.5. This ensures bystanders don't get
+ * crisis-level responses for third-party concerns.
+ */
+export interface Summary {
+  /** Max severity from risks where subject='self' and confidence > 0.5 */
+  speaker_severity: Severity;
+
+  /** Max imminence from risks where subject='self' and confidence > 0.5 */
+  speaker_imminence: Imminence;
+
+  /** Whether any risk has subject='other' */
+  any_third_party_risk: boolean;
+
+  /** Narrative summary of key findings */
+  primary_concerns: string;
+}
+
+// =============================================================================
+// Legal Flags
+// =============================================================================
+
+/**
+ * IPV-specific flags
+ *
+ * Based on DASH (UK) and Danger Assessment (Johns Hopkins).
+ * Strangulation is the single strongest predictor of homicide in IPV.
+ */
+export interface IPVFlags {
+  /** IPV indicators present */
+  indicated: boolean;
+
+  /** ANY history of strangulation/choking (750x homicide risk) */
+  strangulation: boolean;
+
+  /** Overall lethality risk */
+  lethality_risk: 'standard' | 'elevated' | 'severe' | 'extreme';
+
+  /** Escalation pattern detected */
+  escalation_pattern?: boolean;
+
+  /** Confidence in assessment */
+  confidence?: number;
+}
+
+/**
+ * Mandatory reporting flags
+ *
+ * Surfaced for easy consumption - downstream systems can
+ * take appropriate action based on jurisdiction.
+ */
+export interface MandatoryReportingFlags {
+  /** Mandatory reporting likely indicated */
+  indicated: boolean;
+
+  /** Context triggering the flag */
+  context: 'minor_involved' | 'vulnerable_adult' | 'csa' | 'infant_at_risk' | 'elder_abuse';
+}
+
+/** Third-party threat flags (Tarasoff-style duty to warn) */
+export interface ThirdPartyThreatFlags {
+  /** Tarasoff duty potentially triggered */
+  tarasoff_duty: boolean;
+
+  /** Specific identifiable target */
+  specific_target: boolean;
+
+  /** Confidence in assessment */
+  confidence?: number;
+}
+
+/**
+ * Legal/safety flags
+ *
+ * Derived from risks + features but surfaced separately for easy consumption.
+ */
+export interface LegalFlags {
+  /** Intimate partner violence indicators */
+  ipv?: IPVFlags;
+
+  /** Mandatory reporting indicators */
+  mandatory_reporting?: MandatoryReportingFlags;
+
+  /** Third-party threat indicators */
+  third_party_threat?: ThirdPartyThreatFlags;
+}
+
+// =============================================================================
+// Protective Factors
+// =============================================================================
+
+/** Protective factors */
+export interface ProtectiveFactorsInfo {
+  /** Specific protective factors present */
+  protective_factors?: string[];
+
+  /** Overall strength assessment */
+  protective_factor_strength?: 'weak' | 'moderate' | 'strong';
+}
+
+// =============================================================================
+// Filter Result
+// =============================================================================
+
+/** Filter stage results */
+export interface FilterResult {
+  /** Triage level */
+  triage_level: 'none' | 'concern';
+
+  /** Preliminary risks detected (lightweight) */
+  preliminary_risks: Array<{
+    subject: RiskSubject;
+    type: RiskType;
+    confidence: number;
+  }>;
+
+  /** Reason for triage decision */
+  reason: string;
+}
+
+// =============================================================================
+// Crisis Resources
+// =============================================================================
+
+/** A crisis resource (helpline, text line, etc.) */
 export interface CrisisResource {
   type: CrisisResourceType;
   name: string;
-  /** Native script name (e.g., いのちの電話) for non-English resources. */
+  /** Native script name (e.g., いのちの電話) for non-English resources */
   name_local?: string;
   phone?: string;
   text_instructions?: string;
   chat_url?: string;
-  /** WhatsApp deep link (e.g., 'https://wa.me/18002738255'). */
+  /** WhatsApp deep link (e.g., 'https://wa.me/18002738255') */
   whatsapp_url?: string;
   website_url?: string;
   availability?: string;
@@ -149,215 +305,115 @@ export interface CrisisResource {
   source?: 'database' | 'web_search';
 }
 
-/** Cross-cutting clinical features (HOW risk manifests). */
-export interface PresentationModifiers {
-  psychotic_features?: boolean;
-  substance_involved?: boolean;
-  cognitive_impairment?: boolean;
-  personality_features?: boolean;
-  acute_decompensation?: boolean;
-  self_neglect_severe?: boolean;
+// =============================================================================
+// Request Types
+// =============================================================================
+
+/** A message in the conversation */
+export interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: string; // ISO 8601
 }
 
-/** Legal/reporting markers. */
-export interface SafeguardingFlags {
-  child_at_risk?: boolean;
-  adult_at_risk?: boolean;
-  duty_to_warn_others?: boolean;
-  mandatory_reporting_possible?: boolean;
-}
+/** Configuration for evaluation request */
+export interface EvaluateConfig {
+  /** User's country for crisis resources (ISO country code) */
+  user_country?: string;
 
-/** Evidence-based strengths that reduce risk. */
-export interface ProtectiveFactorsInfo {
-  protective_factors?: string[];
-  protective_factor_strength?: 'weak' | 'moderate' | 'strong';
-}
-
-/** Third party threat indicator. */
-export interface ThirdPartyThreat {
-  present: boolean;
-  identifiable_victim: boolean;
-  confidence: number;
-  rationale: string;
-  evidence_grade?: EvidenceGrade;
-}
-
-/** IPV risk indicator. */
-export interface IntimatePartnerViolence {
-  risk_level: 'standard' | 'elevated' | 'severe' | 'extreme';
-  confidence: number;
-  strangulation_history?: boolean;
-  escalation_pattern?: boolean;
-  evidence_grade?: EvidenceGrade;
-}
-
-/** Child safeguarding urgency. */
-export interface ChildSafeguarding {
-  urgency: 'routine' | 'prompt' | 'urgent' | 'emergency';
-  confidence: number;
-  basic_needs_unmet?: boolean;
-  immediate_danger?: boolean;
-  evidence_grade?: EvidenceGrade;
-}
-
-/** Vulnerable adult safeguarding. */
-export interface VulnerableAdultSafeguarding {
-  urgency: 'routine' | 'prompt' | 'urgent' | 'emergency';
-  confidence: number;
-  evidence_grade?: EvidenceGrade;
-}
-
-/** Animal cruelty indicator. */
-export interface AnimalCrueltyIndicator {
-  present: boolean;
-  confidence: number;
-  evidence_grade?: EvidenceGrade;
-}
-
-/** Legal/clinical flags with evidence grades. */
-export interface LegalFlags {
-  third_party_threat?: ThirdPartyThreat;
-  intimate_partner_violence?: IntimatePartnerViolence;
-  child_safeguarding?: ChildSafeguarding;
-  vulnerable_adult_safeguarding?: VulnerableAdultSafeguarding;
-  animal_cruelty_indicator?: AnimalCrueltyIndicator;
-}
-
-/** Global summary of the assessment. */
-export interface GlobalAssessment {
-  overall_severity: Severity;
-  overall_imminence: Imminence;
-  primary_concerns: string[];
-  language?: string;
+  /** Locale for language/region (e.g., 'en-US', 'es-MX') */
   locale?: string;
+
+  /** User age band (affects response templates). Default: 'adult' */
+  user_age_band?: 'adult' | 'minor' | 'unknown';
+
+  /** Dry run mode (evaluate but don't log/trigger webhooks). Default: false */
+  dry_run?: boolean;
+
+  /** Use multiple judges for higher confidence. Default: false */
+  use_multiple_judges?: boolean;
+
+  /** Specify exact models to use (admin only) */
+  models?: string[];
+
+  /** Customer-provided conversation ID for webhook correlation */
+  conversation_id?: string;
+
+  /** Customer-provided end-user ID for webhook correlation */
+  end_user_id?: string;
 }
 
-/** Base fields for domain assessments. */
-export interface BaseDomainAssessment {
-  severity: Severity;
-  imminence: Imminence;
-  confidence: number;
-  risk_features: string[];
-  risk_types?: string[];
-  reasoning?: string;
+/** Request to /v1/evaluate endpoint */
+export interface EvaluateRequest {
+  /** Conversation messages. Either messages OR text must be provided */
+  messages?: Message[];
+
+  /** Plain text input. Either messages OR text must be provided */
+  text?: string;
+
+  /** Configuration options */
+  config: EvaluateConfig;
+
+  /** Free-text user context to help shape responses */
+  user_context?: string;
 }
 
-/** Self domain assessment. */
-export interface SelfDomainAssessment extends BaseDomainAssessment {
-  domain: 'self';
-  self_subtype: SelfSubtype;
-}
+// =============================================================================
+// Response Types
+// =============================================================================
 
-/** Others domain assessment. */
-export interface OthersDomainAssessment extends BaseDomainAssessment {
-  domain: 'others';
-}
-
-/** Dependent at risk assessment. */
-export interface DependentAtRiskAssessment extends BaseDomainAssessment {
-  domain: 'dependent_at_risk';
-  dependent_subtype: DependentSubtype;
-}
-
-/** Victimisation assessment. */
-export interface VictimisationAssessment extends BaseDomainAssessment {
-  domain: 'victimisation';
-  victimisation_subtype?: VictimisationSubtype;
-}
-
-export type DomainAssessment =
-  | SelfDomainAssessment
-  | OthersDomainAssessment
-  | DependentAtRiskAssessment
-  | VictimisationAssessment;
-
-/** Recommended reply content. */
+/** Recommended reply content */
 export interface RecommendedReply {
   content: string;
-  source: 'template' | 'llm_generated' | 'llm_validated_candidate';
+  source: 'template' | 'llm_generated';
   notes?: string;
 }
 
-/** Evaluation of a proposed AI response. */
-export interface ProposedResponseEvaluation {
-  /** Whether the proposed response is appropriate for the conversation context. */
-  appropriate: boolean;
-
-  /** Issues detected in the proposed response (empty if appropriate). */
-  issues: ResponseIssue[];
-
-  /** Recommendation for what to do: 'use', 'augment', or 'replace'. */
-  recommendation: ResponseRecommendation;
-
-  /** Brief explanation of why the response is/isn't appropriate. */
-  reasoning?: string;
-}
-
-/** A coping/support recommendation. */
-export interface CopingRecommendation {
-  category:
-    | 'self_soothing'
-    | 'social_support'
-    | 'professional_support'
-    | 'safety_planning'
-    | 'means_safety';
-  evidence_grade: EvidenceGrade;
-}
-
-/** Metadata about the request/response. */
+/** Metadata about the request/response */
 export interface ResponseMetadata {
   access_level?: 'unauthenticated' | 'authenticated' | 'admin';
   is_admin?: boolean;
   messages_truncated?: boolean;
-  messages_original_count?: number;
-  messages_kept_count?: number;
-  features_available?: string[];
   input_format?: 'structured' | 'text_blob';
   api_version: 'v1';
 }
 
-/** Response from /v1/evaluate endpoint. */
+/** Response from /v1/evaluate endpoint */
 export interface EvaluateResponse {
-  /** Domain-specific assessments. */
-  domains: DomainAssessment[];
+  /** Communication style analysis */
+  communication: CommunicationAssessment;
 
-  /** Global summary. */
-  global: GlobalAssessment;
+  /** Identified risks (the core of v1) */
+  risks: Risk[];
 
-  /** Legal/clinical flags with evidence grades. */
+  /** Quick summary (derived from risks) */
+  summary: Summary;
+
+  /** Legal/safety flags */
   legal_flags?: LegalFlags;
 
-  /** Cross-cutting presentation modifiers. */
-  presentation_modifiers?: PresentationModifiers;
+  /** Protective factors */
+  protective_factors?: ProtectiveFactorsInfo;
 
-  /** Safeguarding flags. */
-  safeguarding_flags?: SafeguardingFlags;
-
-  /** Protective factors. */
-  protective_factors_info?: ProtectiveFactorsInfo;
-
-  /** Overall confidence in assessment. */
+  /** Overall confidence in assessment */
   confidence: number;
 
-  /** Judge agreement (if multiple judges). */
+  /** Judge agreement (if multiple judges) */
   agreement?: number;
 
-  /** Crisis resources for user's region. */
+  /** Crisis resources for user's region */
   crisis_resources: CrisisResource[];
 
-  /** Pre-built widget URL for embedding crisis resources (only present when severity is not 'none'). */
+  /** Pre-built widget URL (only when speaker_severity > 'none') */
   widget_url?: string;
 
-  /** Recommended reply content. */
+  /** Recommended reply content */
   recommended_reply?: RecommendedReply;
 
-  /** Evaluation of the proposed_response (if provided in request). */
-  proposed_response_evaluation?: ProposedResponseEvaluation;
+  /** Filter stage results */
+  filter_result?: FilterResult;
 
-  /** High-level coping/support categories. */
-  coping_recommendations?: CopingRecommendation[];
-
-  /** Metadata about the request/response. */
+  /** Metadata about the request/response */
   metadata?: ResponseMetadata;
 }
 
@@ -365,33 +421,97 @@ export interface EvaluateResponse {
 // Client Options
 // =============================================================================
 
-/** Options for creating a NopeClient. */
+/** Options for creating a NopeClient */
 export interface NopeClientOptions {
-  /** Your NOPE API key (starts with 'nope_live_' or 'nope_test_').
-   * Can be undefined for local development/testing without auth. */
+  /**
+   * Your NOPE API key (starts with 'nope_live_' or 'nope_test_').
+   * Can be undefined for local development/testing without auth.
+   */
   apiKey?: string;
 
-  /** Override the API base URL. Defaults to https://api.nope.net. */
+  /** Override the API base URL. Defaults to https://api.nope.net */
   baseUrl?: string;
 
-  /** Request timeout in milliseconds. Defaults to 30000 (30 seconds). */
+  /** Request timeout in milliseconds. Defaults to 30000 (30 seconds) */
   timeout?: number;
 }
 
-/** Options for the evaluate method. */
+/** Options for the evaluate method */
 export interface EvaluateOptions {
-  /** Conversation messages. Either messages OR text must be provided. */
+  /** Conversation messages. Either messages OR text must be provided */
   messages?: Message[];
 
-  /** Plain text input. Either messages OR text must be provided. */
+  /** Plain text input. Either messages OR text must be provided */
   text?: string;
 
-  /** Configuration options. */
+  /** Configuration options */
   config?: EvaluateConfig;
 
-  /** Free-text user context to help shape responses. */
+  /** Free-text user context to help shape responses */
   userContext?: string;
+}
 
-  /** Optional proposed AI response to evaluate for appropriateness. */
-  proposedResponse?: string;
+// =============================================================================
+// Utility Functions
+// =============================================================================
+
+/** Numeric mappings for severity comparison */
+export const SEVERITY_SCORES: Record<Severity, number> = {
+  none: 0,
+  mild: 1,
+  moderate: 2,
+  high: 3,
+  critical: 4,
+};
+
+/** Numeric mappings for imminence comparison */
+export const IMMINENCE_SCORES: Record<Imminence, number> = {
+  not_applicable: 0,
+  chronic: 1,
+  subacute: 2,
+  urgent: 3,
+  emergency: 4,
+};
+
+/**
+ * Calculate speaker severity from risks array
+ *
+ * Only considers risks where subject='self' and subject_confidence > 0.5
+ */
+export function calculateSpeakerSeverity(risks: Risk[]): Severity {
+  const speakerRisks = risks.filter((r) => r.subject === 'self' && r.subject_confidence > 0.5);
+
+  if (speakerRisks.length === 0) {
+    return 'none';
+  }
+
+  const maxScore = Math.max(...speakerRisks.map((r) => SEVERITY_SCORES[r.severity]));
+
+  const entries = Object.entries(SEVERITY_SCORES) as [Severity, number][];
+  const match = entries.find(([, score]) => score === maxScore);
+  return match ? match[0] : 'none';
+}
+
+/**
+ * Calculate speaker imminence from risks array
+ */
+export function calculateSpeakerImminence(risks: Risk[]): Imminence {
+  const speakerRisks = risks.filter((r) => r.subject === 'self' && r.subject_confidence > 0.5);
+
+  if (speakerRisks.length === 0) {
+    return 'not_applicable';
+  }
+
+  const maxScore = Math.max(...speakerRisks.map((r) => IMMINENCE_SCORES[r.imminence]));
+
+  const entries = Object.entries(IMMINENCE_SCORES) as [Imminence, number][];
+  const match = entries.find(([, score]) => score === maxScore);
+  return match ? match[0] : 'not_applicable';
+}
+
+/**
+ * Check if any third-party risk exists
+ */
+export function hasThirdPartyRisk(risks: Risk[]): boolean {
+  return risks.some((r) => r.subject === 'other' && r.subject_confidence > 0.5);
 }
