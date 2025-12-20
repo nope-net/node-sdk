@@ -202,6 +202,77 @@ import type {
 } from '@nope-net/sdk';
 ```
 
+## Webhook Verification
+
+If you've configured webhooks in the dashboard, use `Webhook.verify()` to validate incoming payloads:
+
+```typescript
+import { Webhook, WebhookPayload, WebhookSignatureError } from '@nope-net/sdk';
+
+app.post('/webhooks/nope', (req, res) => {
+  try {
+    const event: WebhookPayload = Webhook.verify(
+      req.body,
+      req.headers['x-nope-signature'] as string,
+      req.headers['x-nope-timestamp'] as string,
+      process.env.NOPE_WEBHOOK_SECRET!
+    );
+
+    console.log(`Received ${event.event}: ${event.risk_summary.overall_severity}`);
+
+    // Handle the event
+    if (event.event === 'risk.critical') {
+      // Immediate escalation needed
+    } else if (event.event === 'risk.elevated') {
+      // Review recommended
+    }
+
+    res.status(200).send('OK');
+  } catch (err) {
+    if (err instanceof WebhookSignatureError) {
+      console.error('Webhook verification failed:', err.message);
+      res.status(401).send('Invalid signature');
+    } else {
+      throw err;
+    }
+  }
+});
+```
+
+### Webhook Options
+
+```typescript
+const event = Webhook.verify(
+  payload,
+  signature,
+  timestamp,
+  secret,
+  {
+    maxAgeSeconds: 300,  // Default: 5 minutes. Set to 0 to disable timestamp checking.
+  }
+);
+```
+
+### Testing Webhooks
+
+Use `Webhook.sign()` to generate test signatures:
+
+```typescript
+const payload = { event: 'test.ping', /* ... */ };
+const { signature, timestamp } = Webhook.sign(payload, secret);
+
+// Use in test requests
+await fetch('/webhooks/nope', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-NOPE-Signature': signature,
+    'X-NOPE-Timestamp': timestamp,
+  },
+  body: JSON.stringify(payload),
+});
+```
+
 ## Risk Taxonomy
 
 NOPE uses an orthogonal taxonomy separating WHO is at risk from WHAT type of harm:

@@ -88,3 +88,21 @@ export {
   calculateSpeakerImminence,
   hasThirdPartyRisk,
 } from './types.js';
+
+// Webhook verification
+export {
+  Webhook,
+  WebhookSignatureError,
+} from './webhook.js';
+
+export type {
+  WebhookEventType,
+  WebhookRiskLevel,
+  WebhookPayload,
+  WebhookRiskSummary,
+  WebhookDomainAssessment,
+  WebhookFlags,
+  WebhookResourceProvided,
+  WebhookConversation,
+  WebhookVerifyOptions,
+} from './webhook.js';
