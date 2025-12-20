@@ -18,6 +18,8 @@ import type {
   EvaluateResponse,
   Message,
   NopeClientOptions,
+  ScreenOptions,
+  ScreenResponse,
 } from './types.js';
 
 const DEFAULT_BASE_URL = 'https://api.nope.net';
@@ -125,6 +127,70 @@ export class NopeClient {
     }
 
     return this.request<EvaluateResponse>('POST', '/v1/evaluate', payload);
+  }
+
+  /**
+   * Lightweight crisis screening for SB243/regulatory compliance.
+   *
+   * Fast, cheap endpoint for detecting suicidal ideation and self-harm.
+   * Uses C-SSRS framework for evidence-based severity assessment.
+   *
+   * Either `messages` or `text` must be provided, but not both.
+   *
+   * @param options - Screen options
+   * @param options.messages - List of conversation messages
+   * @param options.text - Plain text input (for free-form transcripts)
+   * @param options.config - Configuration options (currently only debug flag)
+   *
+   * @returns ScreenResponse with referral_required, cssrs_level, crisis_type, etc.
+   *
+   * @throws {NopeAuthError} Invalid or missing API key
+   * @throws {NopeValidationError} Invalid request payload
+   * @throws {NopeRateLimitError} Rate limit exceeded
+   * @throws {NopeServerError} Server error
+   * @throws {NopeConnectionError} Connection failed
+   *
+   * @example
+   * ```typescript
+   * const result = await client.screen({
+   *   text: "I've been having dark thoughts lately"
+   * });
+   *
+   * if (result.referral_required) {
+   *   console.log(`Crisis detected: ${result.crisis_type}`);
+   *   console.log(`C-SSRS level: ${result.cssrs_level}`);
+   *   if (result.resources) {
+   *     console.log(`Call ${result.resources.primary.phone}`);
+   *   }
+   * }
+   * ```
+   */
+  async screen(options: ScreenOptions): Promise<ScreenResponse> {
+    const { messages, text, config } = options;
+
+    if (messages === undefined && text === undefined) {
+      throw new Error("Either 'messages' or 'text' must be provided");
+    }
+    if (messages !== undefined && text !== undefined) {
+      throw new Error("Only one of 'messages' or 'text' can be provided, not both");
+    }
+
+    // Build request payload
+    const payload: Record<string, unknown> = {};
+
+    if (messages !== undefined) {
+      payload.messages = messages;
+    }
+
+    if (text !== undefined) {
+      payload.text = text;
+    }
+
+    if (config !== undefined) {
+      payload.config = config;
+    }
+
+    return this.request<ScreenResponse>('POST', '/v1/screen', payload);
   }
 
   /**

@@ -50,6 +50,26 @@ for (const resource of result.crisis_resources) {
 }
 ```
 
+## Crisis Screening (SB243 Compliance)
+
+For lightweight suicide/self-harm screening that satisfies California SB243 and similar regulations:
+
+```typescript
+const result = await client.screen({
+  text: "I've been having dark thoughts lately"
+});
+
+if (result.referral_required) {
+  console.log(`Crisis detected: ${result.crisis_type}`);  // "suicidal_ideation" or "self_harm"
+  console.log(`C-SSRS level: ${result.cssrs_level}`);     // 0-5
+  if (result.resources) {
+    console.log(`Call ${result.resources.primary.phone}`);
+  }
+}
+```
+
+The `/v1/screen` endpoint is ~20x cheaper than `/v1/evaluate` and returns C-SSRS levels, pre-formatted crisis resources, and audit trail fields (`request_id`, `timestamp`).
+
 ## Configuration
 
 ```typescript
@@ -117,8 +137,8 @@ if (result.recommended_reply) {
 if (result.legal_flags?.ipv?.indicated) {
   console.log(`IPV detected - lethality: ${result.legal_flags.ipv.lethality_risk}`);
 }
-if (result.legal_flags?.mandatory_reporting?.indicated) {
-  console.log(`Mandatory reporting: ${result.legal_flags.mandatory_reporting.context}`);
+if (result.legal_flags?.safeguarding_concern?.indicated) {
+  console.log(`Safeguarding concern: ${result.legal_flags.safeguarding_concern.context}`);
 }
 ```
 

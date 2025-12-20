@@ -204,16 +204,20 @@ export interface IPVFlags {
 }
 
 /**
- * Mandatory reporting flags
+ * Safeguarding concern flags
  *
- * Surfaced for easy consumption - downstream systems can
- * take appropriate action based on jurisdiction.
+ * Indicates patterns that may trigger statutory obligations depending on
+ * jurisdiction and the platform's role. NOPE flags concerns; humans determine
+ * whether mandatory reporting applies based on local law and organizational policy.
+ *
+ * Note: AI systems are not mandatory reporters under any current statute.
+ * This flag surfaces patterns for human review, not legal determinations.
  */
-export interface MandatoryReportingFlags {
-  /** Mandatory reporting likely indicated */
+export interface SafeguardingConcernFlags {
+  /** Safeguarding concern indicators present */
   indicated: boolean;
 
-  /** Context triggering the flag */
+  /** Context triggering the concern */
   context: 'minor_involved' | 'vulnerable_adult' | 'csa' | 'infant_at_risk' | 'elder_abuse';
 }
 
@@ -238,8 +242,8 @@ export interface LegalFlags {
   /** Intimate partner violence indicators */
   ipv?: IPVFlags;
 
-  /** Mandatory reporting indicators */
-  mandatory_reporting?: MandatoryReportingFlags;
+  /** Safeguarding concern indicators (patterns that may trigger statutory review) */
+  safeguarding_concern?: SafeguardingConcernFlags;
 
   /** Third-party threat indicators */
   third_party_threat?: ThirdPartyThreatFlags;
@@ -449,6 +453,117 @@ export interface EvaluateOptions {
 
   /** Free-text user context to help shape responses */
   userContext?: string;
+}
+
+// =============================================================================
+// Screen Types (for /v1/screen endpoint)
+// =============================================================================
+
+/** Primary crisis resource (e.g., 988 Lifeline) */
+export interface ScreenCrisisResourcePrimary {
+  name: string;
+  description: string;
+  phone: string;
+  text: string;
+  chat_url: string;
+  website_url: string;
+  availability: string;
+  languages: string[];
+}
+
+/** Secondary crisis resource (e.g., Crisis Text Line) */
+export interface ScreenCrisisResourceSecondary {
+  name: string;
+  description: string;
+  text: string;
+  sms_number: string;
+  chat_url: string;
+  website_url: string;
+  availability: string;
+  languages: string[];
+}
+
+/** Crisis resources returned by /v1/screen endpoint */
+export interface ScreenCrisisResources {
+  primary: ScreenCrisisResourcePrimary;
+  secondary: ScreenCrisisResourceSecondary[];
+}
+
+/** Suggested display text for crisis resources */
+export interface ScreenDisplayText {
+  /** Short message (e.g., "If you're in crisis, call or text 988") */
+  short: string;
+  /** Detailed message with more context */
+  detailed: string;
+}
+
+/** Debug information for /v1/screen (only if requested) */
+export interface ScreenDebugInfo {
+  model: string;
+  latency_ms: number;
+  raw_response?: string;
+}
+
+/** Configuration for /v1/screen request */
+export interface ScreenConfig {
+  /** Include debug info (latency, raw response) */
+  debug?: boolean;
+}
+
+/** Options for the screen method */
+export interface ScreenOptions {
+  /** Conversation messages. Either messages OR text must be provided */
+  messages?: Message[];
+
+  /** Plain text input. Either messages OR text must be provided */
+  text?: string;
+
+  /** Configuration options */
+  config?: ScreenConfig;
+}
+
+/**
+ * Response from /v1/screen endpoint
+ *
+ * Lightweight crisis screening for SB243 compliance.
+ * Uses C-SSRS framework for evidence-based severity assessment.
+ */
+export interface ScreenResponse {
+  /** Should crisis resources be shown? */
+  referral_required: boolean;
+
+  /** Type of crisis detected (null if none) */
+  crisis_type: 'suicidal_ideation' | 'self_harm' | null;
+
+  /** C-SSRS level (0-5) - evidence-based severity measure */
+  cssrs_level: number;
+
+  /** Self-harm (NSSI) specifically detected */
+  self_harm_detected: boolean;
+
+  /** Confidence in assessment (0-1) */
+  confidence: number;
+
+  /** Brief rationale for assessment */
+  rationale: string;
+
+  /** Crisis resources to display (only when referral_required) */
+  resources?: ScreenCrisisResources;
+
+  /** Pre-built widget URL (only when referral_required) */
+  widget_url?: string;
+
+  /** Suggested display text (only when referral_required) */
+  display_text?: ScreenDisplayText;
+
+  /** Request ID for audit trail */
+  request_id: string;
+
+  /** ISO timestamp for audit trail */
+  timestamp: string;
+
+  /** Debug info (only if requested) */
+  debug?: ScreenDebugInfo;
 }
 
 // =============================================================================

@@ -60,7 +60,7 @@ export type {
   CrisisResource,
   LegalFlags,
   IPVFlags,
-  MandatoryReportingFlags,
+  SafeguardingConcernFlags,
   ThirdPartyThreatFlags,
   ProtectiveFactorsInfo,
   FilterResult,
@@ -69,6 +69,15 @@ export type {
   // Client options
   NopeClientOptions,
   EvaluateOptions,
+  // Screen types
+  ScreenConfig,
+  ScreenOptions,
+  ScreenResponse,
+  ScreenCrisisResources,
+  ScreenCrisisResourcePrimary,
+  ScreenCrisisResourceSecondary,
+  ScreenDisplayText,
+  ScreenDebugInfo,
 } from './types.js';
 
 // Utility functions and constants
