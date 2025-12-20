@@ -1,6 +1,6 @@
 {
   "name": "@nope-net/sdk",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "TypeScript SDK for the NOPE safety API - risk classification for conversations",
   "type": "module",
   "main": "./dist/index.js",
