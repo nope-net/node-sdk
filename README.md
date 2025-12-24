@@ -52,23 +52,24 @@ for (const resource of result.crisis_resources) {
 
 ## Crisis Screening (SB243 Compliance)
 
-For lightweight suicide/self-harm screening that satisfies California SB243 and similar regulations:
+For lightweight suicide/self-harm screening that satisfies California SB243, NY Article 47, and similar regulations:
 
 ```typescript
 const result = await client.screen({
   text: "I've been having dark thoughts lately"
 });
 
-if (result.referral_required) {
-  console.log(`Crisis detected: ${result.crisis_type}`);  // "suicidal_ideation" or "self_harm"
-  console.log(`C-SSRS level: ${result.cssrs_level}`);     // 0-5
+if (result.show_resources) {
+  console.log(`Suicidal ideation: ${result.suicidal_ideation}`);
+  console.log(`Self-harm: ${result.self_harm}`);
+  console.log(`Rationale: ${result.rationale}`);
   if (result.resources) {
     console.log(`Call ${result.resources.primary.phone}`);
   }
 }
 ```
 
-The `/v1/screen` endpoint is ~20x cheaper than `/v1/evaluate` and returns C-SSRS levels, pre-formatted crisis resources, and audit trail fields (`request_id`, `timestamp`).
+The `/v1/screen` endpoint is ~20x cheaper than `/v1/evaluate` and returns independent detection flags (`suicidal_ideation`, `self_harm`), pre-formatted crisis resources, and audit trail fields (`request_id`, `timestamp`).
 
 ## Configuration
 

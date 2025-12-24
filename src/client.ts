@@ -133,7 +133,7 @@ export class NopeClient {
    * Lightweight crisis screening for SB243/regulatory compliance.
    *
    * Fast, cheap endpoint for detecting suicidal ideation and self-harm.
-   * Uses C-SSRS framework for evidence-based severity assessment.
+   * Returns independent detection flags, tuned conservatively for compliance.
    *
    * Either `messages` or `text` must be provided, but not both.
    *
@@ -142,7 +142,7 @@ export class NopeClient {
    * @param options.text - Plain text input (for free-form transcripts)
    * @param options.config - Configuration options (currently only debug flag)
    *
-   * @returns ScreenResponse with referral_required, cssrs_level, crisis_type, etc.
+   * @returns ScreenResponse with show_resources, suicidal_ideation, self_harm flags
    *
    * @throws {NopeAuthError} Invalid or missing API key
    * @throws {NopeValidationError} Invalid request payload
@@ -156,9 +156,9 @@ export class NopeClient {
    *   text: "I've been having dark thoughts lately"
    * });
    *
-   * if (result.referral_required) {
-   *   console.log(`Crisis detected: ${result.crisis_type}`);
-   *   console.log(`C-SSRS level: ${result.cssrs_level}`);
+   * if (result.show_resources) {
+   *   console.log(`SI: ${result.suicidal_ideation}, SH: ${result.self_harm}`);
+   *   console.log(`Rationale: ${result.rationale}`);
    *   if (result.resources) {
    *     console.log(`Call ${result.resources.primary.phone}`);
    *   }

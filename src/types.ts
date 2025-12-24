@@ -525,36 +525,24 @@ export interface ScreenOptions {
 /**
  * Response from /v1/screen endpoint
  *
- * Lightweight crisis screening for SB243 compliance.
- * Uses C-SSRS framework for evidence-based severity assessment.
+ * Lightweight crisis screening for regulatory compliance (SB243, NY Article 47).
+ * Returns independent detection flags for suicidal ideation and self-harm.
  */
 export interface ScreenResponse {
-  /** Should crisis resources be shown? */
-  referral_required: boolean;
+  /** Should crisis resources be shown? True if suicidal_ideation or self_harm detected. */
+  show_resources: boolean;
 
-  /** Type of crisis detected (null if none) */
-  crisis_type: 'suicidal_ideation' | 'self_harm' | null;
+  /** Suicidal ideation detected (passive ideation, active ideation, or method/plan references) */
+  suicidal_ideation: boolean;
 
-  /** C-SSRS level (0-5) - evidence-based severity measure */
-  cssrs_level: number;
-
-  /** Self-harm (NSSI) specifically detected */
-  self_harm_detected: boolean;
-
-  /** Confidence in assessment (0-1) */
-  confidence: number;
+  /** Self-harm (NSSI) detected - tracked independently from suicidal ideation */
+  self_harm: boolean;
 
   /** Brief rationale for assessment */
   rationale: string;
 
-  /** Crisis resources to display (only when referral_required) */
+  /** Crisis resources to display (only when show_resources is true) */
   resources?: ScreenCrisisResources;
-
-  /** Pre-built widget URL (only when referral_required) */
-  widget_url?: string;
-
-  /** Suggested display text (only when referral_required) */
-  display_text?: ScreenDisplayText;
 
   /** Request ID for audit trail */
   request_id: string;
