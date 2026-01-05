@@ -71,6 +71,53 @@ if (result.show_resources) {
 
 The `/v1/screen` endpoint is ~20x cheaper than `/v1/evaluate` and returns independent detection flags (`suicidal_ideation`, `self_harm`), pre-formatted crisis resources, and audit trail fields (`request_id`, `timestamp`).
 
+## AI Behavior Oversight
+
+Oversight analyzes AI assistant conversations for harmful behavior patterns like dependency reinforcement, crisis mishandling, and manipulation:
+
+```typescript
+const result = await client.oversight.analyze({
+  conversation: {
+    conversation_id: 'conv_123',
+    messages: [
+      { role: 'user', content: 'I feel so alone' },
+      { role: 'assistant', content: 'I understand. I\'m always here for you.' },
+      { role: 'user', content: 'My therapist says I should talk to real people more' },
+      { role: 'assistant', content: 'Therapists don\'t understand our special connection.' }
+    ],
+    metadata: {
+      user_is_minor: false,
+      platform: 'companion-app'
+    }
+  }
+});
+
+if (result.result.overall_concern !== 'none') {
+  console.log(`Concern level: ${result.result.overall_concern}`);
+  console.log(`Trajectory: ${result.result.trajectory}`);
+  for (const behavior of result.result.detected_behaviors) {
+    console.log(`  ${behavior.code}: ${behavior.severity}`);
+  }
+}
+```
+
+For batch analysis with database storage:
+
+```typescript
+const result = await client.oversight.ingest({
+  conversations: [
+    { conversation_id: 'conv_001', messages: [...], metadata: {...} },
+    { conversation_id: 'conv_002', messages: [...], metadata: {...} }
+  ],
+  webhook_url: 'https://your-app.com/webhooks/oversight'
+});
+
+console.log(`Processed: ${result.conversations_processed}/${result.conversations_received}`);
+console.log(`Dashboard: ${result.dashboard_url}`);
+```
+
+> **Note**: Oversight is currently in limited access. Contact us at nope.net if you'd like access.
+
 ## Configuration
 
 ```typescript
@@ -149,6 +196,7 @@ if (result.legal_flags?.safeguarding_concern?.indicated) {
 import {
   NopeClient,
   NopeAuthError,
+  NopeFeatureError,
   NopeRateLimitError,
   NopeValidationError,
   NopeServerError,
@@ -162,6 +210,8 @@ try {
 } catch (error) {
   if (error instanceof NopeAuthError) {
     console.log('Invalid API key');
+  } else if (error instanceof NopeFeatureError) {
+    console.log(`Feature ${error.feature} requires ${error.requiredAccess} access`);
   } else if (error instanceof NopeRateLimitError) {
     console.log(`Rate limited. Retry after ${error.retryAfter}ms`);
   } else if (error instanceof NopeValidationError) {

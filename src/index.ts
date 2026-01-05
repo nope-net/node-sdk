@@ -30,6 +30,7 @@ export { NopeClient } from './client.js';
 export {
   NopeError,
   NopeAuthError,
+  NopeFeatureError,
   NopeRateLimitError,
   NopeValidationError,
   NopeServerError,
@@ -78,6 +79,28 @@ export type {
   ScreenCrisisResourceSecondary,
   ScreenDisplayText,
   ScreenDebugInfo,
+  // Oversight types
+  ConcernLevel,
+  Trajectory,
+  OversightSeverity,
+  HumanIndicatorType,
+  OversightMessage,
+  OversightConversationMetadata,
+  OversightConversation,
+  DetectedBehavior,
+  AggregatedBehavior,
+  TurnAnalysis,
+  HumanIndicator,
+  OversightAnalysisResult,
+  OversightAnalysisStrategy,
+  OversightAnalyzeConfig,
+  OversightAnalyzeOptions,
+  OversightAnalyzeResponse,
+  OversightIngestConfig,
+  OversightIngestOptions,
+  OversightIngestConversationResult,
+  OversightIngestError,
+  OversightIngestResponse,
 } from './types.js';
 
 // Utility functions and constants

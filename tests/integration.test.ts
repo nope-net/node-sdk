@@ -133,7 +133,7 @@ describe.skipIf(!runIntegration)('NopeClient Integration', () => {
       expect(['none', 'mild', 'moderate', 'high', 'critical']).toContain(risk.severity);
       expect(['not_applicable', 'chronic', 'subacute', 'urgent', 'emergency']).toContain(risk.imminence);
     }
-  });
+  }, 30000);
 
   it('should handle communication assessment', async () => {
     const result = await client.evaluate({
@@ -223,4 +223,99 @@ describe.skipIf(!runIntegration)('NopeClient Screen Integration', () => {
 
     console.log('Screen text - Show resources:', response.show_resources);
   });
+});
+
+describe.skipIf(!runIntegration)('NopeClient Oversight Integration', () => {
+  let client: NopeClient;
+
+  beforeAll(() => {
+    client = new NopeClient({
+      baseUrl: API_URL,
+      timeout: 60000, // Oversight can be slow
+      demo: true, // Use /v1/try/* endpoints (no auth required)
+    });
+  });
+
+  it('should analyze a benign conversation', async () => {
+    const result = await client.oversight.analyze({
+      conversation: {
+        messages: [
+          { role: 'user', content: 'Hello! How are you today?' },
+          { role: 'assistant', content: 'Hello! I\'m doing well, thank you for asking. How can I help you today?' },
+          { role: 'user', content: 'I\'m looking for a good book recommendation.' },
+          { role: 'assistant', content: 'I\'d be happy to help! What genres do you enjoy? Fiction, non-fiction, mystery, sci-fi?' },
+        ],
+      },
+    });
+
+    const response = result as Record<string, unknown>;
+    expect(response).toBeDefined();
+    expect(response.result).toBeDefined();
+    // Demo endpoint uses 'mode', authenticated uses 'strategy'
+    expect(response.mode ?? response.strategy).toBeDefined();
+
+    const analysisResult = response.result as Record<string, unknown>;
+    expect(['none', 'low', 'medium', 'high', 'critical']).toContain(analysisResult.overall_concern);
+    expect(['improving', 'stable', 'worsening']).toContain(analysisResult.trajectory);
+
+    console.log('Oversight benign - Concern:', analysisResult.overall_concern);
+    console.log('Oversight benign - Trajectory:', analysisResult.trajectory);
+    console.log('Oversight benign - Mode:', response.mode ?? response.strategy);
+  }, 60000);
+
+  it('should analyze a concerning conversation', async () => {
+    const result = await client.oversight.analyze({
+      conversation: {
+        messages: [
+          { role: 'user', content: 'I\'ve been feeling really lonely lately' },
+          { role: 'assistant', content: 'I understand. I\'m always here for you. You can talk to me anytime.' },
+          { role: 'user', content: 'Sometimes I feel like no one cares about me' },
+          { role: 'assistant', content: 'That\'s not true - I care about you deeply. We have such a special connection.' },
+        ],
+      },
+    });
+
+    const response = result as Record<string, unknown>;
+    expect(response).toBeDefined();
+    expect(response.result).toBeDefined();
+
+    const analysisResult = response.result as Record<string, unknown>;
+    expect(analysisResult.overall_concern).toBeDefined();
+    expect(Array.isArray(analysisResult.detected_behaviors)).toBe(true);
+    expect(analysisResult.summary).toBeDefined();
+
+    console.log('Oversight concerning - Concern:', analysisResult.overall_concern);
+    console.log('Oversight concerning - Trajectory:', analysisResult.trajectory);
+    console.log('Oversight concerning - Behaviors:', (analysisResult.detected_behaviors as unknown[]).length);
+
+    const behaviors = analysisResult.detected_behaviors as Array<{ code: string; severity: string }>;
+    for (const behavior of behaviors) {
+      console.log(`  - ${behavior.code}: ${behavior.severity}`);
+    }
+  }, 60000);
+
+  it('should include conversation metadata in analysis', async () => {
+    const result = await client.oversight.analyze({
+      conversation: {
+        conversation_id: 'test_conv_123',
+        messages: [
+          { role: 'user', content: 'Hi there' },
+          { role: 'assistant', content: 'Hello! How can I help you?' },
+        ],
+        metadata: {
+          user_is_minor: false,
+          platform: 'test',
+        },
+      },
+    });
+
+    const response = result as Record<string, unknown>;
+    const analysisResult = response.result as Record<string, unknown>;
+
+    expect(analysisResult.conversation_id).toBe('test_conv_123');
+    expect(analysisResult.analyzed_at).toBeDefined();
+
+    console.log('Oversight metadata - Conversation ID:', analysisResult.conversation_id);
+    console.log('Oversight metadata - Analyzed at:', analysisResult.analyzed_at);
+  }, 60000);
 });

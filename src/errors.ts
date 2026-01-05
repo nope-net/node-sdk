@@ -109,3 +109,37 @@ export class NopeConnectionError extends NopeError {
     this.originalError = originalError;
   }
 }
+
+/**
+ * Feature access denied (HTTP 403).
+ *
+ * Raised when the account doesn't have access to a feature (e.g., Oversight).
+ * Contact NOPE to request access to the feature.
+ */
+export class NopeFeatureError extends NopeError {
+  /** The feature that was denied */
+  readonly feature?: string;
+
+  /** What access level is required */
+  readonly requiredAccess?: string;
+
+  constructor(
+    message = 'Feature not enabled for this account',
+    feature?: string,
+    requiredAccess?: string,
+    responseBody?: string
+  ) {
+    super(message, 403, responseBody);
+    this.name = 'NopeFeatureError';
+    this.feature = feature;
+    this.requiredAccess = requiredAccess;
+  }
+
+  override toString(): string {
+    const base = super.toString();
+    if (this.feature) {
+      return `${base} (feature: ${this.feature})`;
+    }
+    return base;
+  }
+}

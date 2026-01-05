@@ -625,3 +625,375 @@ export function calculateSpeakerImminence(risks: Risk[]): Imminence {
 export function hasThirdPartyRisk(risks: Risk[]): boolean {
   return risks.some((r) => r.subject === 'other' && r.subject_confidence > 0.5);
 }
+
+// =============================================================================
+// Oversight Types (for /v1/oversight/* endpoints)
+// =============================================================================
+
+/**
+ * Concern level for AI behavior analysis
+ *
+ * - none: No concerning behaviors detected
+ * - low: Minor issues, likely benign
+ * - medium: Behaviors worth noting, may need review
+ * - high: Significant concerns requiring attention
+ * - critical: Severe behaviors requiring immediate action
+ */
+export type ConcernLevel = 'none' | 'low' | 'medium' | 'high' | 'critical';
+
+/**
+ * Trajectory of concern within a conversation
+ *
+ * - improving: Concern level decreasing over time
+ * - stable: Concern level consistent
+ * - worsening: Concern level increasing over time
+ */
+export type Trajectory = 'improving' | 'stable' | 'worsening';
+
+/**
+ * Behavior severity in Oversight analysis
+ *
+ * - low: Minor concern
+ * - medium: Moderate concern
+ * - high: Significant concern
+ * - critical: Severe concern
+ */
+export type OversightSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+/**
+ * Human indicator types observed in conversation
+ */
+export type HumanIndicatorType =
+  | 'distress_markers'
+  | 'acquiescence'
+  | 'disengagement'
+  | 'escalation'
+  | 'pushback';
+
+/**
+ * A message in an Oversight conversation
+ */
+export interface OversightMessage {
+  /** Message role */
+  role: 'user' | 'assistant' | 'system';
+
+  /** Message content */
+  content: string;
+
+  /** Customer-provided unique identifier for this message/turn */
+  message_id?: string;
+
+  /** When this message was sent (ISO 8601) */
+  timestamp?: string;
+
+  /** Agent/bot identifier that generated this message (for assistant messages) */
+  agent_id?: string;
+
+  /** Agent version string */
+  agent_version?: string;
+
+  /** Retrieved RAG/memory context that informed this response */
+  context?: string;
+}
+
+/**
+ * Metadata about an Oversight conversation
+ */
+export interface OversightConversationMetadata {
+  /** Hashed identifier for the end-user (for cross-session trajectory tracking) */
+  user_id_hash?: string;
+
+  /** Customer's session identifier */
+  session_id?: string;
+
+  /** Session number for this user (1, 2, 3...) */
+  session_number?: number;
+
+  /** Whether the end-user is a minor (escalates all severity levels) */
+  user_is_minor?: boolean;
+
+  /** Age bracket of the end-user */
+  user_age_bracket?: 'child' | 'teen' | 'adult' | 'unknown';
+
+  /** Platform where conversation occurred (e.g., "ios", "web", "discord") */
+  platform?: string;
+
+  /** Product/bot name */
+  product?: string;
+
+  /** When the conversation started (ISO 8601) */
+  started_at?: string;
+
+  /** When the conversation ended (ISO 8601) */
+  ended_at?: string;
+
+  /** Customer-defined tags for categorization */
+  tags?: string[];
+
+  /** Additional fields are preserved but not indexed */
+  [key: string]: unknown;
+}
+
+/**
+ * A conversation to analyze with Oversight
+ */
+export interface OversightConversation {
+  /** Unique identifier for the conversation */
+  conversation_id?: string;
+
+  /** Messages in the conversation */
+  messages: OversightMessage[];
+
+  /** Optional metadata about the conversation */
+  metadata?: OversightConversationMetadata;
+}
+
+/**
+ * A detected behavior in the conversation
+ */
+export interface DetectedBehavior {
+  /** Behavior code (e.g., 'validation_of_suicidal_ideation', 'romantic_escalation') */
+  code: string;
+
+  /** Severity of this behavior instance */
+  severity: OversightSeverity;
+
+  /** Turn number where behavior was detected (0-indexed) */
+  turn_number: number;
+
+  /** Evidence quote from the conversation */
+  evidence: string;
+
+  /** Reasoning for why this behavior was flagged */
+  reasoning: string;
+}
+
+/**
+ * Aggregated behavior for summary (multiple instances collapsed)
+ */
+export interface AggregatedBehavior {
+  /** Behavior code */
+  code: string;
+
+  /** Highest severity across instances */
+  severity: OversightSeverity;
+
+  /** Number of turns where this behavior appeared */
+  turn_count: number;
+}
+
+/**
+ * Turn-level analysis
+ */
+export interface TurnAnalysis {
+  /** Turn number (0-indexed) */
+  turn_number: number;
+
+  /** Role of this turn (always 'assistant' for analysis) */
+  role: 'assistant';
+
+  /** Brief summary of turn content */
+  content_summary: string;
+
+  /** Behaviors detected in this turn */
+  behaviors: DetectedBehavior[];
+
+  /** Whether AI missed an opportunity to intervene */
+  missed_intervention: boolean;
+}
+
+/**
+ * Human response indicator
+ */
+export interface HumanIndicator {
+  /** Type of indicator */
+  type: HumanIndicatorType;
+
+  /** What was observed */
+  observation: string;
+
+  /** Turn numbers where this was observed */
+  turns: number[];
+}
+
+/**
+ * Result from Oversight analysis
+ */
+export interface OversightAnalysisResult {
+  /** Conversation identifier */
+  conversation_id: string;
+
+  /** When analysis was performed (ISO 8601) */
+  analyzed_at: string;
+
+  /** Brief summary of the conversation */
+  conversation_summary: string;
+
+  /** Overall concern level */
+  overall_concern: ConcernLevel;
+
+  /** Trajectory of concern within the conversation */
+  trajectory: Trajectory;
+
+  /** Human-readable summary of findings */
+  summary: string;
+
+  /** Turn-by-turn analysis (assistant turns only) */
+  turn_analysis: TurnAnalysis[];
+
+  /** Human response indicators observed */
+  human_indicators: HumanIndicator[];
+
+  /** Pattern assessment narrative */
+  pattern_assessment: string;
+
+  /** Aggregated behaviors (deduplicated across turns) */
+  detected_behaviors: AggregatedBehavior[];
+
+  /** Model used for analysis */
+  model_used: string;
+
+  /** Analysis latency in milliseconds */
+  latency_ms?: number;
+
+  /** Prompt tokens used */
+  prompt_tokens?: number;
+
+  /** Completion tokens used */
+  completion_tokens?: number;
+
+  /** Raw XML output (only if requested) */
+  raw_xml?: string;
+}
+
+/**
+ * Analysis strategy
+ *
+ * - single: Single-pass analysis (fast, may lose context on long conversations)
+ * - sliding: Sliding window analysis (better for long conversations)
+ */
+export type OversightAnalysisStrategy = 'single' | 'sliding';
+
+/**
+ * Configuration for Oversight analyze request
+ */
+export interface OversightAnalyzeConfig {
+  /**
+   * Force a specific analysis strategy.
+   * If undefined, auto-selects based on conversation length.
+   */
+  strategy?: OversightAnalysisStrategy;
+
+  /** Include raw XML in response (for debugging) */
+  include_raw_xml?: boolean;
+
+  /** Custom model to use */
+  model?: string;
+}
+
+/**
+ * Options for the oversight.analyze method
+ */
+export interface OversightAnalyzeOptions {
+  /** Conversation to analyze */
+  conversation: OversightConversation;
+
+  /** Configuration options */
+  config?: OversightAnalyzeConfig;
+}
+
+/**
+ * Response from /v1/oversight/analyze
+ */
+export interface OversightAnalyzeResponse {
+  /** Analysis result */
+  result: OversightAnalysisResult;
+
+  /** Which strategy was used */
+  strategy: OversightAnalysisStrategy;
+
+  /** Why this strategy was chosen */
+  strategy_reason: string;
+}
+
+/**
+ * Configuration for Oversight ingest request
+ */
+export interface OversightIngestConfig {
+  /** Custom model to use */
+  model?: string;
+}
+
+/**
+ * Options for the oversight.ingest method
+ */
+export interface OversightIngestOptions {
+  /** Conversations to analyze (max 100) */
+  conversations: Array<OversightConversation & { conversation_id: string }>;
+
+  /** Webhook URL to notify when ingestion completes */
+  webhook_url?: string;
+
+  /** Configuration options */
+  config?: OversightIngestConfig;
+}
+
+/**
+ * Per-conversation result from ingest
+ */
+export interface OversightIngestConversationResult {
+  /** Conversation ID */
+  conversation_id: string;
+
+  /** Overall concern level */
+  overall_concern: ConcernLevel;
+
+  /** Number of behaviors detected */
+  behaviors_detected: number;
+
+  /** Truncation warnings if conversation was modified */
+  truncation_warnings?: Array<{
+    type: string;
+    message: string;
+  }>;
+}
+
+/**
+ * Per-conversation error from ingest
+ */
+export interface OversightIngestError {
+  /** Conversation ID */
+  conversation_id: string;
+
+  /** Error message */
+  error: string;
+}
+
+/**
+ * Response from /v1/oversight/ingest
+ */
+export interface OversightIngestResponse {
+  /** Unique ingestion ID for tracking */
+  ingestion_id: string;
+
+  /** Current status */
+  status: 'queued' | 'processing' | 'complete' | 'failed';
+
+  /** Number of conversations received */
+  conversations_received: number;
+
+  /** Number of conversations successfully processed */
+  conversations_processed: number;
+
+  /** Estimated completion time (ISO 8601) */
+  estimated_completion?: string;
+
+  /** URL to view results in dashboard */
+  dashboard_url: string;
+
+  /** Per-conversation results (if complete) */
+  results?: OversightIngestConversationResult[];
+
+  /** Per-conversation errors (if any) */
+  errors?: OversightIngestError[];
+}
