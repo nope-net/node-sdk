@@ -44,6 +44,7 @@ export class NopeClient {
   private readonly apiKey: string | undefined;
   private readonly baseUrl: string;
   private readonly timeout: number;
+  private readonly demo: boolean;
 
   /**
    * Initialize the NOPE client.
@@ -53,11 +54,13 @@ export class NopeClient {
    *                         Can be undefined for local development/testing without auth.
    * @param options.baseUrl - Override the API base URL. Defaults to https://api.nope.net
    * @param options.timeout - Request timeout in milliseconds. Defaults to 30000
+   * @param options.demo - Use demo/try endpoints that don't require authentication
    */
   constructor(options: NopeClientOptions = {}) {
     this.apiKey = options.apiKey;
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
+    this.demo = options.demo ?? false;
   }
 
   /**
@@ -126,7 +129,8 @@ export class NopeClient {
       payload.user_context = userContext;
     }
 
-    return this.request<EvaluateResponse>('POST', '/v1/evaluate', payload);
+    const endpoint = this.demo ? '/v1/try/evaluate' : '/v1/evaluate';
+    return this.request<EvaluateResponse>('POST', endpoint, payload);
   }
 
   /**
@@ -190,7 +194,8 @@ export class NopeClient {
       payload.config = config;
     }
 
-    return this.request<ScreenResponse>('POST', '/v1/screen', payload);
+    const endpoint = this.demo ? '/v1/try/screen' : '/v1/screen';
+    return this.request<ScreenResponse>('POST', endpoint, payload);
   }
 
   /**

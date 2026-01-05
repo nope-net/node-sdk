@@ -438,6 +438,13 @@ export interface NopeClientOptions {
 
   /** Request timeout in milliseconds. Defaults to 30000 (30 seconds) */
   timeout?: number;
+
+  /**
+   * Use demo/try endpoints that don't require authentication.
+   * These are rate-limited but useful for testing and evaluation.
+   * When true, uses /v1/try/evaluate and /v1/try/screen instead of /v1/evaluate and /v1/screen.
+   */
+  demo?: boolean;
 }
 
 /** Options for the evaluate method */

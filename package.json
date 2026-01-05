@@ -18,7 +18,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "vitest run",
+    "test": "SKIP_INTEGRATION=true vitest run",
+    "test:integration": "vitest run tests/integration.test.ts",
     "test:watch": "vitest",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
