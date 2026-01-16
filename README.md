@@ -67,9 +67,18 @@ if (result.show_resources) {
     console.log(`Call ${result.resources.primary.phone}`);
   }
 }
+
+// Access detailed risks array (all 9 risk types)
+for (const risk of result.risks) {
+  console.log(`${risk.type}: ${risk.severity} (subject: ${risk.subject})`);
+}
 ```
 
-The `/v1/screen` endpoint is ~20x cheaper than `/v1/evaluate` and returns independent detection flags (`suicidal_ideation`, `self_harm`), pre-formatted crisis resources, and audit trail fields (`request_id`, `timestamp`).
+The `/v1/screen` endpoint is ~50x cheaper than `/v1/evaluate` and returns:
+- Boolean flags (`suicidal_ideation`, `self_harm`, `show_resources`)
+- Detailed `risks` array covering all 9 risk types with severity and imminence
+- Pre-formatted crisis resources
+- Audit trail fields (`request_id`, `timestamp`)
 
 ## AI Behavior Oversight
 
@@ -118,6 +127,36 @@ console.log(`Dashboard: ${result.dashboard_url}`);
 
 > **Note**: Oversight is currently in limited access. Contact us at nope.net if you'd like access.
 
+## Crisis Resources API
+
+Look up crisis helplines by country, with optional AI-powered ranking:
+
+```typescript
+// Get resources by country
+const resources = await client.resources('US', {
+  scopes: ['suicide', 'crisis'],
+  urgent: true
+});
+for (const resource of resources.resources) {
+  console.log(`${resource.name}: ${resource.phone}`);
+}
+
+// AI-ranked resources based on context
+const ranked = await client.resourcesSmart('US', 'teen struggling with eating disorder');
+for (const item of ranked.ranked) {
+  console.log(`${item.rank}. ${item.resource.name}`);
+  console.log(`   Why: ${item.why}`);
+}
+
+// List supported countries
+const countries = await client.resourcesCountries();
+console.log(`Supported: ${countries.countries.join(', ')}`);
+
+// Detect user's country from request
+const detected = await client.detectCountry();
+console.log(`Country: ${detected.country_code}`);
+```
+
 ## Configuration
 
 ```typescript
@@ -126,6 +165,9 @@ const client = new NopeClient({
   baseUrl: 'https://api.nope.net',   // Optional, for self-hosted
   timeout: 30000,                     // Request timeout in milliseconds
 });
+
+// Demo mode - no API key required, uses /v1/try/* endpoints
+const demoClient = new NopeClient({ demo: true });
 ```
 
 ### Evaluate Options
