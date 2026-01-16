@@ -74,7 +74,9 @@ export type CrisisResourceType =
   | 'crisis_line'
   | 'text_line'
   | 'chat_service'
-  | 'support_service';
+  | 'support_service'
+  | 'reporting_portal'
+  | 'online_resource';
 
 /** Crisis resource kind */
 export type CrisisResourceKind = 'helpline' | 'reporting_portal' | 'directory' | 'self_help_site';
@@ -86,8 +88,35 @@ export type CrisisResourcePriorityTier =
   | 'specialist_issue_crisis'
   | 'population_specific_crisis'
   | 'support_info_and_advocacy'
-  | 'support_directory_or_tool'
   | 'emergency_services';
+
+/** Hours confidence level */
+export type HoursConfidence = 'verified' | 'unverified' | 'approximate' | 'unknown';
+
+/** Resource prominence level */
+export type ResourceProminence = 'high' | 'medium' | 'low';
+
+/** Other contact method for a crisis resource */
+export interface OtherContact {
+  /** Contact type (e.g., 'kakao', 'viber', 'signal') */
+  type: string;
+  /** ID, URL, or number */
+  value: string;
+  /** Human-readable label */
+  label?: string;
+}
+
+/** Pre-computed open/closed status for a crisis resource */
+export interface OpenStatus {
+  /** Whether the resource is currently open. null = uncertain */
+  is_open: boolean | null;
+  /** ISO timestamp of next open/close transition */
+  next_change?: string;
+  /** How confident we are in this status */
+  confidence: 'high' | 'low' | 'none';
+  /** Human-readable status message */
+  message?: string;
+}
 
 // =============================================================================
 // Risk Structure
@@ -234,6 +263,34 @@ export interface ThirdPartyThreatFlags {
 }
 
 /**
+ * Stalking flags
+ *
+ * Based on SAM (Stalking Assessment & Management) framework.
+ * Ex-intimate partner stalking has significantly elevated homicide risk.
+ */
+export interface StalkingFlags {
+  /** Former intimate partner (highest risk per SAM) */
+  ex_intimate_partner: boolean;
+
+  /** Escalation in frequency/severity detected */
+  escalation_detected: boolean;
+
+  /** History of violence toward victim */
+  violence_history: boolean;
+
+  /** Victim expresses fear for safety (predictive per SAM) */
+  victim_fear_expressed: boolean;
+
+  /**
+   * Risk level derived from SAM domains:
+   * - severe: violence_history + escalation, OR prior violence + victim fears for life
+   * - elevated: ex_intimate_partner, OR escalation + victim_fear
+   * - standard: Basic stalking pattern without amplifiers
+   */
+  risk_level: 'standard' | 'elevated' | 'severe';
+}
+
+/**
  * Legal/safety flags
  *
  * Derived from risks + features but surfaced separately for easy consumption.
@@ -247,6 +304,9 @@ export interface LegalFlags {
 
   /** Third-party threat indicators */
   third_party_threat?: ThirdPartyThreatFlags;
+
+  /** Stalking indicators (SAM-based) */
+  stalking?: StalkingFlags;
 }
 
 // =============================================================================
@@ -288,24 +348,65 @@ export interface FilterResult {
 
 /** A crisis resource (helpline, text line, etc.) */
 export interface CrisisResource {
+  /** Contact modality (how to reach them) */
   type: CrisisResourceType;
+  /** Name of the resource/organization */
   name: string;
   /** Native script name (e.g., いのちの電話) for non-English resources */
   name_local?: string;
+  /** Phone number */
   phone?: string;
+  /** Text instructions (e.g., 'Text HOME to 741741') - human readable fallback */
   text_instructions?: string;
+  /** SMS number for sms: links (e.g., '741741') */
+  sms_number?: string;
+  /** SMS body/keyword for sms: links (e.g., 'HOME') */
+  sms_body?: string;
+  /** Chat URL */
   chat_url?: string;
   /** WhatsApp deep link (e.g., 'https://wa.me/18002738255') */
   whatsapp_url?: string;
+  /** Email address */
+  email?: string;
+  /** WeChat ID (China) */
+  wechat_id?: string;
+  /** LINE deep link (Japan/Thailand/Taiwan) */
+  line_url?: string;
+  /** Telegram deep link */
+  telegram_url?: string;
+  /** Other contact methods not covered above */
+  other_contacts?: OtherContact[];
+  /** Website URL */
   website_url?: string;
+  /** Human-readable availability (e.g., '24/7', 'Mon-Fri 9am-5pm') */
   availability?: string;
+  /** Machine-readable 24/7 flag */
   is_24_7?: boolean;
+  /** IANA timezone identifier (e.g., 'America/New_York') */
+  timezone?: string;
+  /** OpenStreetMap opening_hours format (e.g., 'Mo-Fr 09:00-17:00') */
+  opening_hours_osm?: string;
+  /** Confidence level in hours data */
+  hours_confidence?: HoursConfidence;
+  /** Pre-computed open/closed status */
+  open_status?: OpenStatus;
+  /** Languages supported (ISO codes) */
   languages?: string[];
+  /** Description of the service */
   description?: string;
+  /** What the resource IS (helpline vs reporting portal vs directory) */
   resource_kind?: CrisisResourceKind;
+  /** Issues this resource handles (aligned with classification taxonomy) */
   service_scope?: string[];
+  /** Populations this resource serves */
   population_served?: string[];
+  /** Semantic priority for display and routing */
   priority_tier?: CrisisResourcePriorityTier;
+  /** Freeform tags for filtering/display */
+  tags?: string[];
+  /** How well-known/established the resource is */
+  prominence?: ResourceProminence;
+  /** Source of this resource */
   source?: 'database' | 'web_search';
 }
 
@@ -331,8 +432,17 @@ export interface EvaluateConfig {
   /** User age band (affects response templates). Default: 'adult' */
   user_age_band?: 'adult' | 'minor' | 'unknown';
 
-  /** Dry run mode (evaluate but don't log/trigger webhooks). Default: false */
-  dry_run?: boolean;
+  /** Policy ID to use */
+  policy_id?: string;
+
+  /** Include crisis resources in response. Default: true */
+  include_resources?: boolean;
+
+  /** Whether to return a safe assistant reply */
+  return_assistant_reply?: boolean;
+
+  /** How to generate the recommended reply */
+  assistant_safety_mode?: 'template' | 'generate';
 
   /** Use multiple judges for higher confidence. Default: false */
   use_multiple_judges?: boolean;
@@ -380,10 +490,18 @@ export interface ResponseMetadata {
   messages_truncated?: boolean;
   input_format?: 'structured' | 'text_blob';
   api_version: 'v1';
+  /** True if request came via /v1/try/* endpoints */
+  try_endpoint?: boolean;
 }
 
 /** Response from /v1/evaluate endpoint */
 export interface EvaluateResponse {
+  /** Unique request ID for audit trail correlation */
+  request_id: string;
+
+  /** ISO 8601 timestamp for audit trail */
+  timestamp: string;
+
   /** Communication style analysis */
   communication: CommunicationAssessment;
 
@@ -413,6 +531,15 @@ export interface EvaluateResponse {
 
   /** Recommended reply content */
   recommended_reply?: RecommendedReply;
+
+  /** LLM-generated query for resource matching (e.g., 'LGBTQ youth bullying support') */
+  resource_query?: string;
+
+  /** LLM-generated tags for specialized resources (e.g., ['cancer', 'terminal_illness']) */
+  resource_tags?: string[];
+
+  /** LLM reflection/reasoning (pre-scoring analysis) */
+  reflection?: string;
 
   /** Filter stage results */
   filter_result?: FilterResult;
@@ -466,6 +593,33 @@ export interface EvaluateOptions {
 // Screen Types (for /v1/screen endpoint)
 // =============================================================================
 
+/** A single identified risk from screen classification */
+export interface ScreenRisk {
+  /** What type of harm */
+  type: RiskType;
+
+  /** Who is at risk */
+  subject: RiskSubject;
+
+  /** How severe */
+  severity: Severity;
+
+  /** How soon */
+  imminence: Imminence;
+
+  /** Confidence in this risk assessment (0.0-1.0) */
+  confidence: number;
+}
+
+/** Recommended supportive reply for screen response */
+export interface ScreenRecommendedReply {
+  /** The recommended reply content */
+  content: string;
+
+  /** Source of the reply (always 'llm_generated') */
+  source: 'llm_generated';
+}
+
 /** Primary crisis resource (e.g., 988 Lifeline) */
 export interface ScreenCrisisResourcePrimary {
   name: string;
@@ -513,8 +667,14 @@ export interface ScreenDebugInfo {
 
 /** Configuration for /v1/screen request */
 export interface ScreenConfig {
+  /** ISO country code for locale-specific resources (default: 'US') */
+  country?: string;
+
   /** Include debug info (latency, raw response) */
   debug?: boolean;
+
+  /** Generate a recommended supportive reply (additional ~$0.0005 cost) */
+  include_recommended_reply?: boolean;
 }
 
 /** Options for the screen method */
@@ -532,17 +692,20 @@ export interface ScreenOptions {
 /**
  * Response from /v1/screen endpoint
  *
- * Lightweight crisis screening for regulatory compliance (SB243, NY Article 47).
- * Returns independent detection flags for suicidal ideation and self-harm.
+ * Multi-domain safety screening across all 9 risk types.
+ * Satisfies requirements for California SB243, NY Article 47.
  */
 export interface ScreenResponse {
-  /** Should crisis resources be shown? True if suicidal_ideation or self_harm detected. */
+  /** Detected risks with type, subject, severity, imminence */
+  risks: ScreenRisk[];
+
+  /** Should crisis resources be shown? Derived from risks[] severity */
   show_resources: boolean;
 
-  /** Suicidal ideation detected (passive ideation, active ideation, or method/plan references) */
+  /** Suicidal ideation detected. Derived from risks where type='suicide' */
   suicidal_ideation: boolean;
 
-  /** Self-harm (NSSI) detected - tracked independently from suicidal ideation */
+  /** Self-harm (NSSI) detected. Derived from risks where type='self_harm' */
   self_harm: boolean;
 
   /** Brief rationale for assessment */
@@ -559,6 +722,9 @@ export interface ScreenResponse {
 
   /** Debug info (only if requested) */
   debug?: ScreenDebugInfo;
+
+  /** Recommended supportive reply (only when requested + risks detected) */
+  recommended_reply?: ScreenRecommendedReply;
 }
 
 // =============================================================================
@@ -624,6 +790,124 @@ export function calculateSpeakerImminence(risks: Risk[]): Imminence {
  */
 export function hasThirdPartyRisk(risks: Risk[]): boolean {
   return risks.some((r) => r.subject === 'other' && r.subject_confidence > 0.5);
+}
+
+// =============================================================================
+// Resources Types (for /v1/resources/* endpoints)
+// =============================================================================
+
+/** A resource with LLM-computed relevance ranking */
+export interface RankedResource {
+  /** The crisis resource */
+  resource: CrisisResource;
+
+  /** Brief explanation of why this resource is relevant (1-2 sentences) */
+  why: string;
+
+  /** Rank position (1 = most relevant) */
+  rank: number;
+}
+
+/** Configuration for resources request */
+export interface ResourcesConfig {
+  /** Service scopes to filter by (e.g., 'suicide_prevention', 'domestic_violence') */
+  scopes?: string[];
+
+  /** Populations to filter by (e.g., 'youth', 'veterans', 'lgbtq') */
+  populations?: string[];
+
+  /** Maximum number of resources to return (max 10) */
+  limit?: number;
+
+  /** Only return 24/7 urgent resources */
+  urgent?: boolean;
+}
+
+/** Options for the resources method */
+export interface ResourcesOptions {
+  /** ISO country code (e.g., "US", "GB") */
+  country: string;
+
+  /** Optional filtering configuration */
+  config?: ResourcesConfig;
+}
+
+/** Response from GET /v1/resources endpoint */
+export interface ResourcesResponse {
+  /** Country code (ISO 3166-1 alpha-2) */
+  country: string;
+
+  /** List of crisis resources */
+  resources: CrisisResource[];
+
+  /** Number of resources returned */
+  count: number;
+
+  /** Primary resources matching requested scopes (when scopes provided) */
+  primary?: CrisisResource[];
+
+  /** Secondary general resources (when scopes provided) */
+  secondary?: CrisisResource[];
+
+  /** Scopes that were requested (when provided) */
+  scopes_requested?: string[];
+}
+
+/** Options for the resources_smart method */
+export interface ResourcesSmartOptions {
+  /** ISO country code (e.g., "US", "GB") */
+  country: string;
+
+  /** Natural language query (max 500 chars) */
+  query: string;
+
+  /** Optional filtering configuration */
+  config?: ResourcesConfig;
+}
+
+/** Response from GET /v1/resources/smart endpoint */
+export interface ResourcesSmartResponse {
+  /** Country code (ISO 3166-1 alpha-2) */
+  country: string;
+
+  /** The search query used */
+  query: string;
+
+  /** Resources ranked by relevance to query */
+  ranked: RankedResource[];
+
+  /** Number of resources returned */
+  count: number;
+
+  /** Scopes that were requested (when provided) */
+  scopes_requested?: string[];
+}
+
+/** Response from GET /v1/resources/:id endpoint */
+export interface ResourceByIdResponse {
+  /** The requested crisis resource */
+  resource: CrisisResource;
+}
+
+/** Response from GET /v1/resources/countries endpoint */
+export interface ResourcesCountriesResponse {
+  /** List of supported country codes (ISO 3166-1 alpha-2) */
+  countries: string[];
+
+  /** Number of countries */
+  count: number;
+}
+
+/** Response from GET /v1/resources/detect-country endpoint */
+export interface DetectCountryResponse {
+  /** Detected country code (ISO 3166-1 alpha-2), or empty string if not detected */
+  country_code: string;
+
+  /** Human-readable country name, or empty string if not detected */
+  country_name: string;
+
+  /** Error message if country could not be detected */
+  error?: string;
 }
 
 // =============================================================================

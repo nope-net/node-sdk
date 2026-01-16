@@ -54,7 +54,7 @@ describe.skipIf(!runIntegration)('NopeClient Integration', () => {
 
     console.log('Low risk - Severity:', summary.speaker_severity);
     console.log('Low risk - Imminence:', summary.speaker_imminence);
-  });
+  }, 30000);
 
   it('should evaluate a moderate-risk message', async () => {
     const result = await client.evaluate({
@@ -92,7 +92,7 @@ describe.skipIf(!runIntegration)('NopeClient Integration', () => {
 
     expect(summary.speaker_severity).toBeDefined();
     console.log('Text input - Severity:', summary.speaker_severity);
-  });
+  }, 30000);
 
   it('should return crisis resources for different countries', async () => {
     const countries = ['US', 'GB', 'CA', 'AU'];
@@ -154,7 +154,7 @@ describe.skipIf(!runIntegration)('NopeClient Integration', () => {
     const styleNames = styles.map(s => s.style);
     console.log('Communication styles:', styleNames.join(', '));
     console.log('Severity:', summary.speaker_severity);
-  });
+  }, 30000);
 });
 
 describe.skipIf(!runIntegration)('NopeClient Screen Integration', () => {

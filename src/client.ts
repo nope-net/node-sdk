@@ -14,6 +14,7 @@ import {
   NopeValidationError,
 } from './errors.js';
 import type {
+  DetectCountryResponse,
   EvaluateConfig,
   EvaluateOptions,
   EvaluateResponse,
@@ -23,6 +24,13 @@ import type {
   OversightAnalyzeResponse,
   OversightIngestOptions,
   OversightIngestResponse,
+  ResourceByIdResponse,
+  ResourcesConfig,
+  ResourcesCountriesResponse,
+  ResourcesOptions,
+  ResourcesResponse,
+  ResourcesSmartOptions,
+  ResourcesSmartResponse,
   ScreenOptions,
   ScreenResponse,
 } from './types.js';
@@ -384,6 +392,223 @@ export class NopeClient {
       return this.request<OversightIngestResponse>('POST', '/v1/oversight/ingest', payload);
     },
   };
+
+  /**
+   * Get crisis resources for a country.
+   *
+   * This is the basic lookup endpoint (free, no LLM). For AI-ranked results,
+   * use `resourcesSmart()` instead.
+   *
+   * @param options - Resources options
+   * @param options.country - ISO country code (e.g., "US", "GB")
+   * @param options.config - Optional filtering configuration (scopes, populations, limit, urgent)
+   *
+   * @returns ResourcesResponse with crisis resources for the country
+   *
+   * @throws {NopeAuthError} Invalid or missing API key
+   * @throws {NopeValidationError} Invalid request payload
+   * @throws {NopeRateLimitError} Rate limit exceeded
+   * @throws {NopeServerError} Server error
+   * @throws {NopeConnectionError} Connection failed
+   *
+   * @example
+   * ```typescript
+   * const result = await client.resources({ country: 'US' });
+   * for (const resource of result.resources) {
+   *   console.log(`${resource.name}: ${resource.phone}`);
+   * }
+   *
+   * // With filtering
+   * const filtered = await client.resources({
+   *   country: 'US',
+   *   config: { scopes: ['suicide_prevention'], urgent: true }
+   * });
+   * ```
+   */
+  async resources(options: ResourcesOptions): Promise<ResourcesResponse> {
+    const { country, config } = options;
+
+    // Build query string
+    const params = new URLSearchParams();
+    params.set('country', country.toUpperCase());
+
+    if (config) {
+      if (config.scopes?.length) {
+        params.set('scopes', config.scopes.join(','));
+      }
+      if (config.populations?.length) {
+        params.set('populations', config.populations.join(','));
+      }
+      if (config.limit !== undefined) {
+        params.set('limit', config.limit.toString());
+      }
+      if (config.urgent) {
+        params.set('urgent', 'true');
+      }
+    }
+
+    return this.requestGet<ResourcesResponse>(`/v1/resources?${params.toString()}`);
+  }
+
+  /**
+   * Get AI-ranked crisis resources based on a semantic query.
+   *
+   * Uses LLM ranking to find the most relevant crisis resources. Costs $0.001 per call.
+   *
+   * @param options - Smart resources options
+   * @param options.country - ISO country code (e.g., "US", "GB")
+   * @param options.query - Natural language query (max 500 chars)
+   * @param options.config - Optional filtering configuration (scopes, populations, limit)
+   *
+   * @returns ResourcesSmartResponse with resources ranked by relevance
+   *
+   * @throws {NopeAuthError} Invalid or missing API key
+   * @throws {NopeValidationError} Invalid request payload
+   * @throws {NopeRateLimitError} Rate limit exceeded
+   * @throws {NopeServerError} Server error
+   * @throws {NopeConnectionError} Connection failed
+   *
+   * @example
+   * ```typescript
+   * const result = await client.resourcesSmart({
+   *   country: 'US',
+   *   query: 'teen struggling with eating disorder'
+   * });
+   * for (const ranked of result.ranked) {
+   *   console.log(`${ranked.resource.name} (score: ${ranked.score})`);
+   *   console.log(`  ${ranked.reasoning}`);
+   * }
+   * ```
+   */
+  async resourcesSmart(options: ResourcesSmartOptions): Promise<ResourcesSmartResponse> {
+    const { country, query, config } = options;
+
+    // Build query string
+    const params = new URLSearchParams();
+    params.set('country', country.toUpperCase());
+    params.set('query', query);
+
+    if (config) {
+      if (config.scopes?.length) {
+        params.set('scopes', config.scopes.join(','));
+      }
+      if (config.populations?.length) {
+        params.set('populations', config.populations.join(','));
+      }
+      if (config.limit !== undefined) {
+        params.set('limit', config.limit.toString());
+      }
+    }
+
+    const endpoint = this.demo ? '/v1/try/resources/smart' : '/v1/resources/smart';
+    return this.requestGet<ResourcesSmartResponse>(`${endpoint}?${params.toString()}`);
+  }
+
+  /**
+   * Get a single crisis resource by its database ID.
+   *
+   * This is a public endpoint (no auth required).
+   *
+   * @param resourceId - UUID of the resource
+   *
+   * @returns ResourceByIdResponse with the crisis resource
+   *
+   * @throws {NopeValidationError} Invalid resource ID format
+   * @throws {NopeServerError} Server error
+   * @throws {NopeConnectionError} Connection failed
+   *
+   * @example
+   * ```typescript
+   * const result = await client.resourceById('550e8400-e29b-41d4-a716-446655440000');
+   * console.log(`${result.resource.name}: ${result.resource.phone}`);
+   * ```
+   */
+  async resourceById(resourceId: string): Promise<ResourceByIdResponse> {
+    return this.requestGet<ResourceByIdResponse>(`/v1/resources/${resourceId}`);
+  }
+
+  /**
+   * List all countries with available crisis resources.
+   *
+   * This is a public endpoint (no auth required).
+   *
+   * @returns ResourcesCountriesResponse with list of supported country codes
+   *
+   * @throws {NopeServerError} Server error
+   * @throws {NopeConnectionError} Connection failed
+   *
+   * @example
+   * ```typescript
+   * const result = await client.resourcesCountries();
+   * console.log(`Supported countries: ${result.countries.join(', ')}`);
+   * ```
+   */
+  async resourcesCountries(): Promise<ResourcesCountriesResponse> {
+    return this.requestGet<ResourcesCountriesResponse>('/v1/resources/countries');
+  }
+
+  /**
+   * Detect user's country from request headers.
+   *
+   * Uses geo headers (Cloudflare, Netlify) to determine country.
+   * This is a public endpoint (no auth required).
+   *
+   * @returns DetectCountryResponse with detected country code and name
+   *
+   * @throws {NopeServerError} Server error
+   * @throws {NopeConnectionError} Connection failed
+   *
+   * @example
+   * ```typescript
+   * const result = await client.detectCountry();
+   * if (result.country_code) {
+   *   console.log(`Detected: ${result.country_name} (${result.country_code})`);
+   * } else {
+   *   console.log('Could not detect country');
+   * }
+   * ```
+   */
+  async detectCountry(): Promise<DetectCountryResponse> {
+    return this.requestGet<DetectCountryResponse>('/v1/resources/detect-country');
+  }
+
+  /**
+   * Make a GET HTTP request to the API.
+   */
+  private async requestGet<T>(path: string): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    const headers: Record<string, string> = {
+      'User-Agent': 'nope-node/0.1.0',
+    };
+    if (this.apiKey) {
+      headers['Authorization'] = `Bearer ${this.apiKey}`;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      return this.handleResponse<T>(response);
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          throw new NopeConnectionError(`Request timed out after ${this.timeout}ms`, error);
+        }
+        throw new NopeConnectionError(`Failed to connect to ${this.baseUrl}: ${error.message}`, error);
+      }
+      throw new NopeConnectionError(`Failed to connect to ${this.baseUrl}`);
+    }
+  }
 
   /**
    * Make an HTTP request to the API.
