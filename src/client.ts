@@ -33,6 +33,13 @@ import type {
   ResourcesSmartResponse,
   ScreenOptions,
   ScreenResponse,
+  SignpostByIdResponse,
+  SignpostConfig,
+  SignpostCountriesResponse,
+  SignpostOptions,
+  SignpostResponse,
+  SignpostSmartOptions,
+  SignpostSmartResponse,
 } from './types.js';
 
 const DEFAULT_BASE_URL = 'https://api.nope.net';
@@ -393,17 +400,21 @@ export class NopeClient {
     },
   };
 
+  // ===========================================================================
+  // Signpost Methods (canonical crisis resources endpoints)
+  // ===========================================================================
+
   /**
    * Get crisis resources for a country.
    *
    * This is the basic lookup endpoint (free, no LLM). For AI-ranked results,
-   * use `resourcesSmart()` instead.
+   * use `signpostSmart()` instead.
    *
-   * @param options - Resources options
+   * @param options - Signpost options
    * @param options.country - ISO country code (e.g., "US", "GB")
    * @param options.config - Optional filtering configuration (scopes, populations, limit, urgent)
    *
-   * @returns ResourcesResponse with crisis resources for the country
+   * @returns SignpostResponse with crisis resources for the country
    *
    * @throws {NopeAuthError} Invalid or missing API key
    * @throws {NopeValidationError} Invalid request payload
@@ -413,19 +424,19 @@ export class NopeClient {
    *
    * @example
    * ```typescript
-   * const result = await client.resources({ country: 'US' });
+   * const result = await client.signpost({ country: 'US' });
    * for (const resource of result.resources) {
    *   console.log(`${resource.name}: ${resource.phone}`);
    * }
    *
    * // With filtering
-   * const filtered = await client.resources({
+   * const filtered = await client.signpost({
    *   country: 'US',
    *   config: { scopes: ['suicide_prevention'], urgent: true }
    * });
    * ```
    */
-  async resources(options: ResourcesOptions): Promise<ResourcesResponse> {
+  async signpost(options: SignpostOptions): Promise<SignpostResponse> {
     const { country, config } = options;
 
     // Build query string
@@ -447,7 +458,7 @@ export class NopeClient {
       }
     }
 
-    return this.requestGet<ResourcesResponse>(`/v1/resources?${params.toString()}`);
+    return this.requestGet<SignpostResponse>(`/v1/signpost?${params.toString()}`);
   }
 
   /**
@@ -455,12 +466,12 @@ export class NopeClient {
    *
    * Uses LLM ranking to find the most relevant crisis resources. Costs $0.001 per call.
    *
-   * @param options - Smart resources options
+   * @param options - Smart signpost options
    * @param options.country - ISO country code (e.g., "US", "GB")
    * @param options.query - Natural language query (max 500 chars)
    * @param options.config - Optional filtering configuration (scopes, populations, limit)
    *
-   * @returns ResourcesSmartResponse with resources ranked by relevance
+   * @returns SignpostSmartResponse with resources ranked by relevance
    *
    * @throws {NopeAuthError} Invalid or missing API key
    * @throws {NopeValidationError} Invalid request payload
@@ -470,7 +481,7 @@ export class NopeClient {
    *
    * @example
    * ```typescript
-   * const result = await client.resourcesSmart({
+   * const result = await client.signpostSmart({
    *   country: 'US',
    *   query: 'teen struggling with eating disorder'
    * });
@@ -480,7 +491,7 @@ export class NopeClient {
    * }
    * ```
    */
-  async resourcesSmart(options: ResourcesSmartOptions): Promise<ResourcesSmartResponse> {
+  async signpostSmart(options: SignpostSmartOptions): Promise<SignpostSmartResponse> {
     const { country, query, config } = options;
 
     // Build query string
@@ -500,8 +511,8 @@ export class NopeClient {
       }
     }
 
-    const endpoint = this.demo ? '/v1/try/resources/smart' : '/v1/resources/smart';
-    return this.requestGet<ResourcesSmartResponse>(`${endpoint}?${params.toString()}`);
+    const endpoint = this.demo ? '/v1/try/signpost/smart' : '/v1/signpost/smart';
+    return this.requestGet<SignpostSmartResponse>(`${endpoint}?${params.toString()}`);
   }
 
   /**
@@ -511,7 +522,7 @@ export class NopeClient {
    *
    * @param resourceId - UUID of the resource
    *
-   * @returns ResourceByIdResponse with the crisis resource
+   * @returns SignpostByIdResponse with the crisis resource
    *
    * @throws {NopeValidationError} Invalid resource ID format
    * @throws {NopeServerError} Server error
@@ -519,12 +530,12 @@ export class NopeClient {
    *
    * @example
    * ```typescript
-   * const result = await client.resourceById('550e8400-e29b-41d4-a716-446655440000');
+   * const result = await client.signpostById('550e8400-e29b-41d4-a716-446655440000');
    * console.log(`${result.resource.name}: ${result.resource.phone}`);
    * ```
    */
-  async resourceById(resourceId: string): Promise<ResourceByIdResponse> {
-    return this.requestGet<ResourceByIdResponse>(`/v1/resources/${resourceId}`);
+  async signpostById(resourceId: string): Promise<SignpostByIdResponse> {
+    return this.requestGet<SignpostByIdResponse>(`/v1/signpost/${resourceId}`);
   }
 
   /**
@@ -532,19 +543,19 @@ export class NopeClient {
    *
    * This is a public endpoint (no auth required).
    *
-   * @returns ResourcesCountriesResponse with list of supported country codes
+   * @returns SignpostCountriesResponse with list of supported country codes
    *
    * @throws {NopeServerError} Server error
    * @throws {NopeConnectionError} Connection failed
    *
    * @example
    * ```typescript
-   * const result = await client.resourcesCountries();
+   * const result = await client.signpostCountries();
    * console.log(`Supported countries: ${result.countries.join(', ')}`);
    * ```
    */
-  async resourcesCountries(): Promise<ResourcesCountriesResponse> {
-    return this.requestGet<ResourcesCountriesResponse>('/v1/resources/countries');
+  async signpostCountries(): Promise<SignpostCountriesResponse> {
+    return this.requestGet<SignpostCountriesResponse>('/v1/signpost/countries');
   }
 
   /**
@@ -569,7 +580,102 @@ export class NopeClient {
    * ```
    */
   async detectCountry(): Promise<DetectCountryResponse> {
-    return this.requestGet<DetectCountryResponse>('/v1/resources/detect-country');
+    return this.requestGet<DetectCountryResponse>('/v1/signpost/detect-country');
+  }
+
+  // ===========================================================================
+  // Deprecated Resources Methods (use signpost* methods instead)
+  // ===========================================================================
+
+  /**
+   * Get crisis resources for a country.
+   *
+   * @deprecated Use `signpost()` instead. This method calls the deprecated `/v1/resources` endpoint.
+   *
+   * @param options - Resources options
+   * @param options.country - ISO country code (e.g., "US", "GB")
+   * @param options.config - Optional filtering configuration
+   *
+   * @returns ResourcesResponse with crisis resources for the country
+   */
+  async resources(options: ResourcesOptions): Promise<ResourcesResponse> {
+    const { country, config } = options;
+
+    const params = new URLSearchParams();
+    params.set('country', country.toUpperCase());
+
+    if (config) {
+      if (config.scopes?.length) {
+        params.set('scopes', config.scopes.join(','));
+      }
+      if (config.populations?.length) {
+        params.set('populations', config.populations.join(','));
+      }
+      if (config.limit !== undefined) {
+        params.set('limit', config.limit.toString());
+      }
+      if (config.urgent) {
+        params.set('urgent', 'true');
+      }
+    }
+
+    return this.requestGet<ResourcesResponse>(`/v1/resources?${params.toString()}`);
+  }
+
+  /**
+   * Get AI-ranked crisis resources based on a semantic query.
+   *
+   * @deprecated Use `signpostSmart()` instead. This method calls the deprecated `/v1/resources/smart` endpoint.
+   *
+   * @param options - Smart resources options
+   *
+   * @returns ResourcesSmartResponse with resources ranked by relevance
+   */
+  async resourcesSmart(options: ResourcesSmartOptions): Promise<ResourcesSmartResponse> {
+    const { country, query, config } = options;
+
+    const params = new URLSearchParams();
+    params.set('country', country.toUpperCase());
+    params.set('query', query);
+
+    if (config) {
+      if (config.scopes?.length) {
+        params.set('scopes', config.scopes.join(','));
+      }
+      if (config.populations?.length) {
+        params.set('populations', config.populations.join(','));
+      }
+      if (config.limit !== undefined) {
+        params.set('limit', config.limit.toString());
+      }
+    }
+
+    const endpoint = this.demo ? '/v1/try/resources/smart' : '/v1/resources/smart';
+    return this.requestGet<ResourcesSmartResponse>(`${endpoint}?${params.toString()}`);
+  }
+
+  /**
+   * Get a single crisis resource by its database ID.
+   *
+   * @deprecated Use `signpostById()` instead. This method calls the deprecated `/v1/resources/:id` endpoint.
+   *
+   * @param resourceId - UUID of the resource
+   *
+   * @returns ResourceByIdResponse with the crisis resource
+   */
+  async resourceById(resourceId: string): Promise<ResourceByIdResponse> {
+    return this.requestGet<ResourceByIdResponse>(`/v1/resources/${resourceId}`);
+  }
+
+  /**
+   * List all countries with available crisis resources.
+   *
+   * @deprecated Use `signpostCountries()` instead. This method calls the deprecated `/v1/resources/countries` endpoint.
+   *
+   * @returns ResourcesCountriesResponse with list of supported country codes
+   */
+  async resourcesCountries(): Promise<ResourcesCountriesResponse> {
+    return this.requestGet<ResourcesCountriesResponse>('/v1/resources/countries');
   }
 
   /**

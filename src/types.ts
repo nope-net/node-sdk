@@ -911,6 +911,31 @@ export interface DetectCountryResponse {
 }
 
 // =============================================================================
+// Signpost Types (aliases for Resources - canonical naming)
+// =============================================================================
+
+/** @see ResourcesConfig */
+export type SignpostConfig = ResourcesConfig;
+
+/** @see ResourcesOptions */
+export type SignpostOptions = ResourcesOptions;
+
+/** @see ResourcesResponse */
+export type SignpostResponse = ResourcesResponse;
+
+/** @see ResourcesSmartOptions */
+export type SignpostSmartOptions = ResourcesSmartOptions;
+
+/** @see ResourcesSmartResponse */
+export type SignpostSmartResponse = ResourcesSmartResponse;
+
+/** @see ResourceByIdResponse */
+export type SignpostByIdResponse = ResourceByIdResponse;
+
+/** @see ResourcesCountriesResponse */
+export type SignpostCountriesResponse = ResourcesCountriesResponse;
+
+// =============================================================================
 // Oversight Types (for /v1/oversight/* endpoints)
 // =============================================================================
 

@@ -127,13 +127,14 @@ console.log(`Dashboard: ${result.dashboard_url}`);
 
 > **Note**: Oversight is currently in limited access. Contact us at nope.net if you'd like access.
 
-## Crisis Resources API
+## Signpost (Crisis Resources API)
 
 Look up crisis helplines by country, with optional AI-powered ranking:
 
 ```typescript
 // Get resources by country
-const resources = await client.resources('US', {
+const resources = await client.signpost({
+  country: 'US',
   scopes: ['suicide', 'crisis'],
   urgent: true
 });
@@ -142,14 +143,17 @@ for (const resource of resources.resources) {
 }
 
 // AI-ranked resources based on context
-const ranked = await client.resourcesSmart('US', 'teen struggling with eating disorder');
+const ranked = await client.signpostSmart({
+  country: 'US',
+  query: 'teen struggling with eating disorder'
+});
 for (const item of ranked.ranked) {
   console.log(`${item.rank}. ${item.resource.name}`);
   console.log(`   Why: ${item.why}`);
 }
 
 // List supported countries
-const countries = await client.resourcesCountries();
+const countries = await client.signpostCountries();
 console.log(`Supported: ${countries.countries.join(', ')}`);
 
 // Detect user's country from request
