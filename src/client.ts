@@ -156,6 +156,10 @@ export class NopeClient {
   /**
    * Lightweight crisis screening for SB243/regulatory compliance.
    *
+   * @deprecated Use `evaluate()` instead. The screen endpoint has been consolidated
+   * into evaluate, which now uses Edge-backed classification at $0.003/call.
+   * This method calls the legacy `/v0/screen` endpoint ($0.001/call).
+   *
    * Fast, cheap endpoint for detecting suicidal ideation and self-harm.
    * Returns independent detection flags, tuned conservatively for compliance.
    *
@@ -190,6 +194,11 @@ export class NopeClient {
    * ```
    */
   async screen(options: ScreenOptions): Promise<ScreenResponse> {
+    console.warn(
+      '[NOPE SDK] screen() is deprecated. Use evaluate() instead, which now provides ' +
+        'Edge-backed classification at $0.003/call. screen() calls the legacy /v0/screen endpoint.'
+    );
+
     const { messages, text, config } = options;
 
     if (messages === undefined && text === undefined) {
@@ -214,7 +223,8 @@ export class NopeClient {
       payload.config = config;
     }
 
-    const endpoint = this.demo ? '/v1/try/screen' : '/v1/screen';
+    // Legacy v0 endpoint
+    const endpoint = this.demo ? '/v0/try/screen' : '/v0/screen';
     return this.request<ScreenResponse>('POST', endpoint, payload);
   }
 

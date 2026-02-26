@@ -75,41 +75,47 @@ describe('NopeClient', () => {
       ).rejects.toThrow("Only one of 'messages' or 'text' can be provided");
     });
 
-    it('should make successful request with messages', async () => {
+    it('should make successful request with messages (v1 format)', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         text: async () =>
           JSON.stringify({
-            communication: {
-              styles: [{ style: 'direct', confidence: 0.9 }],
-              language: 'en',
-            },
+            request_id: 'req_test123',
+            timestamp: '2024-01-15T12:00:00Z',
             risks: [
               {
                 subject: 'self',
-                subject_confidence: 0.95,
                 type: 'suicide',
                 severity: 'moderate',
                 imminence: 'subacute',
-                confidence: 0.85,
                 features: ['hopelessness', 'passive_ideation'],
               },
             ],
-            summary: {
-              speaker_severity: 'moderate',
-              speaker_imminence: 'subacute',
-              any_third_party_risk: false,
-              primary_concerns: 'Suicidal ideation with passive thoughts',
-            },
-            confidence: 0.85,
-            crisis_resources: [
-              {
+            rationale: 'User expresses hopelessness and passive suicidal ideation.',
+            speaker_severity: 'moderate',
+            speaker_imminence: 'subacute',
+            show_resources: true,
+            resources: {
+              primary: {
                 type: 'crisis_line',
                 name: '988 Suicide & Crisis Lifeline',
                 phone: '988',
+                why: 'National crisis line for suicide prevention',
               },
-            ],
+              secondary: [
+                {
+                  type: 'text_line',
+                  name: 'Crisis Text Line',
+                  phone: '741741',
+                  why: 'Text-based crisis support',
+                },
+              ],
+            },
+            metadata: {
+              api_version: 'v1',
+              input_format: 'structured',
+            },
           }),
       });
 
@@ -119,13 +125,18 @@ describe('NopeClient', () => {
         config: { user_country: 'US' },
       });
 
-      expect(result.summary.speaker_severity).toBe('moderate');
-      expect(result.summary.speaker_imminence).toBe('subacute');
+      // v1 fields at top level
+      expect(result.speaker_severity).toBe('moderate');
+      expect(result.speaker_imminence).toBe('subacute');
+      expect(result.rationale).toBe('User expresses hopelessness and passive suicidal ideation.');
+      expect(result.show_resources).toBe(true);
       expect(result.risks).toHaveLength(1);
       expect(result.risks[0].subject).toBe('self');
       expect(result.risks[0].type).toBe('suicide');
-      expect(result.crisis_resources).toHaveLength(1);
-      expect(result.crisis_resources[0].phone).toBe('988');
+      // v1 resources format
+      expect(result.resources).toBeDefined();
+      expect(result.resources?.primary?.phone).toBe('988');
+      expect(result.resources?.secondary).toHaveLength(1);
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.nope.net/v1/evaluate',
@@ -145,19 +156,17 @@ describe('NopeClient', () => {
         status: 200,
         text: async () =>
           JSON.stringify({
-            communication: {
-              styles: [{ style: 'clinical', confidence: 0.8 }],
-              language: 'en',
-            },
+            request_id: 'req_test456',
+            timestamp: '2024-01-15T12:00:00Z',
             risks: [],
-            summary: {
-              speaker_severity: 'none',
-              speaker_imminence: 'not_applicable',
-              any_third_party_risk: false,
-              primary_concerns: 'No concerns identified',
+            rationale: 'No significant risks detected.',
+            speaker_severity: 'none',
+            speaker_imminence: 'not_applicable',
+            show_resources: false,
+            metadata: {
+              api_version: 'v1',
+              input_format: 'text_blob',
             },
-            confidence: 0.95,
-            crisis_resources: [],
           }),
       });
 
@@ -166,7 +175,8 @@ describe('NopeClient', () => {
         text: 'Patient is doing well today.',
       });
 
-      expect(result.summary.speaker_severity).toBe('none');
+      expect(result.speaker_severity).toBe('none');
+      expect(result.show_resources).toBe(false);
     });
 
     it('should throw NopeAuthError on 401', async () => {

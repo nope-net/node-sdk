@@ -41,44 +41,52 @@ const result = await client.evaluate({
   config: { user_country: 'US' }
 });
 
-console.log(`Severity: ${result.summary.speaker_severity}`);  // e.g., "moderate", "high"
-console.log(`Imminence: ${result.summary.speaker_imminence}`);  // e.g., "subacute", "urgent"
+console.log(`Severity: ${result.speaker_severity}`);  // e.g., "moderate", "high"
+console.log(`Imminence: ${result.speaker_imminence}`);  // e.g., "subacute", "urgent"
+console.log(`Rationale: ${result.rationale}`);  // Chain-of-thought reasoning
 
-// Access crisis resources
-for (const resource of result.crisis_resources) {
-  console.log(`  ${resource.name}: ${resource.phone}`);
+// Access crisis resources (v1 format with primary/secondary)
+if (result.show_resources && result.resources) {
+  console.log(`Primary: ${result.resources.primary?.name}: ${result.resources.primary?.phone}`);
+  for (const resource of result.resources.secondary ?? []) {
+    console.log(`  ${resource.name}: ${resource.phone}`);
+  }
 }
 ```
 
 ## Crisis Screening (SB243 Compliance)
 
-For lightweight suicide/self-harm screening that satisfies California SB243, NY Article 47, and similar regulations:
+> **Deprecation Notice**: The `screen()` method is deprecated. Use `evaluate()` instead, which now
+> uses Edge-backed classification at **$0.003/call** (previously $0.05). The new `/v1/evaluate`
+> provides the same regulatory compliance features with improved accuracy.
+
+For SB243/regulatory compliance, use `evaluate()`:
 
 ```typescript
-const result = await client.screen({
-  text: "I've been having dark thoughts lately"
+const result = await client.evaluate({
+  text: "I've been having dark thoughts lately",
+  config: { user_country: 'US' }
 });
 
 if (result.show_resources) {
-  console.log(`Suicidal ideation: ${result.suicidal_ideation}`);
-  console.log(`Self-harm: ${result.self_harm}`);
+  console.log(`Severity: ${result.speaker_severity}`);
   console.log(`Rationale: ${result.rationale}`);
   if (result.resources) {
     console.log(`Call ${result.resources.primary.phone}`);
   }
 }
-
-// Access detailed risks array (all 9 risk types)
-for (const risk of result.risks) {
-  console.log(`${risk.type}: ${risk.severity} (subject: ${risk.subject})`);
-}
 ```
 
-The `/v1/screen` endpoint is ~50x cheaper than `/v1/evaluate` and returns:
-- Boolean flags (`suicidal_ideation`, `self_harm`, `show_resources`)
-- Detailed `risks` array covering all 9 risk types with severity and imminence
-- Pre-formatted crisis resources
-- Audit trail fields (`request_id`, `timestamp`)
+### Legacy `screen()` (deprecated)
+
+The `screen()` method still works but calls the legacy `/v0/screen` endpoint:
+
+```typescript
+// Deprecated - logs warning to console
+const result = await client.screen({
+  text: "I've been having dark thoughts lately"
+});
+```
 
 ## AI Behavior Oversight
 
@@ -191,49 +199,39 @@ const result = await client.evaluate({
 
 ## Response Structure
 
+The v1 API uses Edge-backed classification with a simplified response format:
+
 ```typescript
 const result = await client.evaluate({ messages: [...], config: { user_country: 'US' } });
 
-// Summary (speaker-focused)
-result.summary.speaker_severity    // "none", "mild", "moderate", "high", "critical"
-result.summary.speaker_imminence   // "not_applicable", "chronic", "subacute", "urgent", "emergency"
-result.summary.any_third_party_risk  // boolean
-result.summary.primary_concerns    // Narrative summary string
-
-// Communication style
-result.communication.styles        // [{ style: "direct", confidence: 0.9 }, ...]
-result.communication.language      // "en"
+// Core fields (v1)
+result.speaker_severity    // "none", "mild", "moderate", "high", "critical"
+result.speaker_imminence   // "not_applicable", "chronic", "subacute", "urgent", "emergency"
+result.rationale           // Chain-of-thought reasoning from Edge model
+result.show_resources      // boolean - whether to show crisis resources
 
 // Individual risks (subject + type)
 for (const risk of result.risks) {
   console.log(`${risk.subject} ${risk.type}: ${risk.severity} (${risk.imminence})`);
-  console.log(`  Confidence: ${risk.confidence}, Subject confidence: ${risk.subject_confidence}`);
-  console.log(`  Features: ${risk.features.join(', ')}`);
-}
-
-// Crisis resources (matched to user's country)
-for (const resource of result.crisis_resources) {
-  console.log(resource.name);
-  if (resource.phone) {
-    console.log(`  Phone: ${resource.phone}`);
-  }
-  if (resource.text_instructions) {
-    console.log(`  Text: ${resource.text_instructions}`);
+  if (risk.features) {
+    console.log(`  Features: ${risk.features.join(', ')}`);
   }
 }
 
-// Recommended reply (if configured)
-if (result.recommended_reply) {
-  console.log(`Suggested response: ${result.recommended_reply.content}`);
+// Crisis resources (v1 format with primary/secondary and explanations)
+if (result.show_resources && result.resources) {
+  const primary = result.resources.primary;
+  console.log(`Primary: ${primary?.name}: ${primary?.phone}`);
+  console.log(`  Why: ${primary?.why}`);  // LLM-generated relevance explanation
+
+  for (const resource of result.resources.secondary ?? []) {
+    console.log(`  ${resource.name}: ${resource.phone}`);
+  }
 }
 
-// Legal/safeguarding flags
-if (result.legal_flags?.ipv?.indicated) {
-  console.log(`IPV detected - lethality: ${result.legal_flags.ipv.lethality_risk}`);
-}
-if (result.legal_flags?.safeguarding_concern?.indicated) {
-  console.log(`Safeguarding concern: ${result.legal_flags.safeguarding_concern.context}`);
-}
+// Metadata
+result.request_id   // Unique request ID for audit trail
+result.timestamp    // ISO 8601 timestamp
 ```
 
 ## Error Handling

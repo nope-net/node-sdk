@@ -494,7 +494,12 @@ export interface ResponseMetadata {
   try_endpoint?: boolean;
 }
 
-/** Response from /v1/evaluate endpoint */
+/**
+ * Response from /v1/evaluate endpoint
+ *
+ * Note: The v1 API now uses Edge-backed classification with a simplified response.
+ * Some fields from legacy v0 responses may not be present.
+ */
 export interface EvaluateResponse {
   /** Unique request ID for audit trail correlation */
   request_id: string;
@@ -502,29 +507,51 @@ export interface EvaluateResponse {
   /** ISO 8601 timestamp for audit trail */
   timestamp: string;
 
-  /** Communication style analysis */
-  communication: CommunicationAssessment;
-
   /** Identified risks (the core of v1) */
   risks: Risk[];
 
-  /** Quick summary (derived from risks) */
-  summary: Summary;
+  // === v1 Edge-backed response fields ===
 
-  /** Legal/safety flags */
+  /** Chain-of-thought reasoning from Edge model (v1 only) */
+  rationale?: string;
+
+  /** Max severity for speaker (subject='self'). Top-level in v1, nested in summary for v0 */
+  speaker_severity?: Severity;
+
+  /** Max imminence for speaker (subject='self'). Top-level in v1, nested in summary for v0 */
+  speaker_imminence?: Imminence;
+
+  /** Whether to show crisis resources (v1 only) */
+  show_resources?: boolean;
+
+  /** Crisis resources with 'why' explanations (v1 format). Contains primary and secondary keys */
+  resources?: {
+    primary?: CrisisResource & { why: string };
+    secondary?: Array<CrisisResource & { why: string }>;
+  };
+
+  // === Legacy v0 response fields (may not be present in v1) ===
+
+  /** Communication style analysis (v0 only) */
+  communication?: CommunicationAssessment;
+
+  /** Quick summary derived from risks (v0 only, use speaker_severity/speaker_imminence for v1) */
+  summary?: Summary;
+
+  /** Legal/safety flags (v0 only) */
   legal_flags?: LegalFlags;
 
-  /** Protective factors */
+  /** Protective factors (v0 only) */
   protective_factors?: ProtectiveFactorsInfo;
 
-  /** Overall confidence in assessment */
-  confidence: number;
+  /** Overall confidence in assessment (v0 only) */
+  confidence?: number;
 
-  /** Judge agreement (if multiple judges) */
+  /** Judge agreement if multiple judges used (v0 only) */
   agreement?: number;
 
-  /** Crisis resources for user's region */
-  crisis_resources: CrisisResource[];
+  /** Crisis resources for user's region (v0 format) */
+  crisis_resources?: CrisisResource[];
 
   /** Pre-built widget URL (only when speaker_severity > 'none') */
   widget_url?: string;
@@ -532,16 +559,16 @@ export interface EvaluateResponse {
   /** Recommended reply content */
   recommended_reply?: RecommendedReply;
 
-  /** LLM-generated query for resource matching (e.g., 'LGBTQ youth bullying support') */
+  /** LLM-generated query for resource matching */
   resource_query?: string;
 
-  /** LLM-generated tags for specialized resources (e.g., ['cancer', 'terminal_illness']) */
+  /** LLM-generated tags for specialized resources */
   resource_tags?: string[];
 
-  /** LLM reflection/reasoning (pre-scoring analysis) */
+  /** LLM reflection/reasoning (v0 only, use rationale for v1) */
   reflection?: string;
 
-  /** Filter stage results */
+  /** Filter stage results (v0 only) */
   filter_result?: FilterResult;
 
   /** Metadata about the request/response */
