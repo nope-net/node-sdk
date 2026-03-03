@@ -14,9 +14,9 @@
  *   config: { user_country: 'US' }
  * });
  *
- * console.log(`Severity: ${result.summary.speaker_severity}`);
- * for (const resource of result.crisis_resources) {
- *   console.log(`  ${resource.name}: ${resource.phone}`);
+ * console.log(`Severity: ${result.speaker_severity}`);
+ * if (result.resources?.primary) {
+ *   console.log(`  ${result.resources.primary.name}: ${result.resources.primary.phone}`);
  * }
  * ```
  *

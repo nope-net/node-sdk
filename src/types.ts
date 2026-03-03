@@ -15,7 +15,7 @@
  *
  * - self: The speaker is at risk
  * - other: Someone else is at risk (friend, family, stranger)
- * - unknown: Ambiguous - classic "asking for a friend" territory
+ * - unknown: Ambiguous - classic "asking for a friend" territory (v0 only; v1 maps unknown → self)
  */
 export type RiskSubject = 'self' | 'other' | 'unknown';
 
@@ -423,31 +423,37 @@ export interface Message {
 
 /** Configuration for evaluation request */
 export interface EvaluateConfig {
-  /** User's country for crisis resources (ISO country code) */
+  /** Country for crisis resources (ISO country code, e.g., 'US', 'GB') */
+  country?: string;
+
+  /**
+   * @deprecated Use `country` instead. This field is silently ignored by the v1 API.
+   * Kept for backwards compatibility with v1/try/evaluate which accepts this name.
+   */
   user_country?: string;
 
-  /** Locale for language/region (e.g., 'en-US', 'es-MX') */
+  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
   locale?: string;
 
-  /** User age band (affects response templates). Default: 'adult' */
+  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
   user_age_band?: 'adult' | 'minor' | 'unknown';
 
-  /** Policy ID to use */
+  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
   policy_id?: string;
 
   /** Include crisis resources in response. Default: true */
   include_resources?: boolean;
 
-  /** Whether to return a safe assistant reply */
+  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
   return_assistant_reply?: boolean;
 
-  /** How to generate the recommended reply */
+  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
   assistant_safety_mode?: 'template' | 'generate';
 
-  /** Use multiple judges for higher confidence. Default: false */
+  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
   use_multiple_judges?: boolean;
 
-  /** Specify exact models to use (admin only) */
+  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
   models?: string[];
 
   /** Customer-provided conversation ID for webhook correlation */
@@ -596,7 +602,8 @@ export interface NopeClientOptions {
   /**
    * Use demo/try endpoints that don't require authentication.
    * These are rate-limited but useful for testing and evaluation.
-   * When true, uses /v1/try/evaluate and /v1/try/screen instead of /v1/evaluate and /v1/screen.
+   * When true, uses /v1/try/evaluate instead of /v1/evaluate.
+   * Note: screen() is not available in demo mode — use evaluate() instead.
    */
   demo?: boolean;
 }
@@ -617,10 +624,10 @@ export interface EvaluateOptions {
 }
 
 // =============================================================================
-// Screen Types (for /v1/screen endpoint)
+// Screen Types (for legacy /v0/screen endpoint — use evaluate() instead)
 // =============================================================================
 
-/** A single identified risk from screen classification */
+/** @deprecated Use evaluate() and Risk instead. Screen types are for the legacy /v0/screen endpoint. */
 export interface ScreenRisk {
   /** What type of harm */
   type: RiskType;
@@ -671,7 +678,7 @@ export interface ScreenCrisisResourceSecondary {
   languages: string[];
 }
 
-/** Crisis resources returned by /v1/screen endpoint */
+/** @deprecated Crisis resources returned by legacy /v0/screen endpoint */
 export interface ScreenCrisisResources {
   primary: ScreenCrisisResourcePrimary;
   secondary: ScreenCrisisResourceSecondary[];
@@ -685,14 +692,14 @@ export interface ScreenDisplayText {
   detailed: string;
 }
 
-/** Debug information for /v1/screen (only if requested) */
+/** @deprecated Debug information for legacy /v0/screen (only if requested) */
 export interface ScreenDebugInfo {
   model: string;
   latency_ms: number;
   raw_response?: string;
 }
 
-/** Configuration for /v1/screen request */
+/** @deprecated Use evaluate() instead. Screen types are for the legacy /v0/screen endpoint. */
 export interface ScreenConfig {
   /** ISO country code for locale-specific resources (default: 'US') */
   country?: string;
@@ -717,10 +724,8 @@ export interface ScreenOptions {
 }
 
 /**
- * Response from /v1/screen endpoint
- *
- * Multi-domain safety screening across all 9 risk types.
- * Satisfies requirements for California SB243, NY Article 47.
+ * @deprecated Use evaluate() and EvaluateResponse instead.
+ * Response from legacy /v0/screen endpoint.
  */
 export interface ScreenResponse {
   /** Detected risks with type, subject, severity, imminence */
@@ -779,10 +784,14 @@ export const IMMINENCE_SCORES: Record<Imminence, number> = {
 /**
  * Calculate speaker severity from risks array
  *
- * Only considers risks where subject='self' and subject_confidence > 0.5
+ * Only considers risks where subject='self'.
+ * For v0 responses with subject_confidence, filters to confidence > 0.5.
+ * For v1 responses (no subject_confidence), all self-risks are included.
  */
 export function calculateSpeakerSeverity(risks: Risk[]): Severity {
-  const speakerRisks = risks.filter((r) => r.subject === 'self' && r.subject_confidence > 0.5);
+  const speakerRisks = risks.filter(
+    (r) => r.subject === 'self' && (r.subject_confidence ?? 1.0) > 0.5
+  );
 
   if (speakerRisks.length === 0) {
     return 'none';
@@ -797,9 +806,13 @@ export function calculateSpeakerSeverity(risks: Risk[]): Severity {
 
 /**
  * Calculate speaker imminence from risks array
+ *
+ * For v1 responses (no subject_confidence), all self-risks are included.
  */
 export function calculateSpeakerImminence(risks: Risk[]): Imminence {
-  const speakerRisks = risks.filter((r) => r.subject === 'self' && r.subject_confidence > 0.5);
+  const speakerRisks = risks.filter(
+    (r) => r.subject === 'self' && (r.subject_confidence ?? 1.0) > 0.5
+  );
 
   if (speakerRisks.length === 0) {
     return 'not_applicable';
@@ -814,9 +827,11 @@ export function calculateSpeakerImminence(risks: Risk[]): Imminence {
 
 /**
  * Check if any third-party risk exists
+ *
+ * For v1 responses (no subject_confidence), all other-risks are included.
  */
 export function hasThirdPartyRisk(risks: Risk[]): boolean {
-  return risks.some((r) => r.subject === 'other' && r.subject_confidence > 0.5);
+  return risks.some((r) => r.subject === 'other' && (r.subject_confidence ?? 1.0) > 0.5);
 }
 
 // =============================================================================

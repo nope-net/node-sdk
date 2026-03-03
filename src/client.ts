@@ -57,7 +57,7 @@ const DEFAULT_TIMEOUT = 30000; // milliseconds
  *   messages: [{ role: 'user', content: 'I feel hopeless' }],
  *   config: { user_country: 'US' }
  * });
- * console.log(result.summary.speaker_severity);
+ * console.log(result.speaker_severity);
  * ```
  */
 export class NopeClient {
@@ -95,7 +95,7 @@ export class NopeClient {
    * @param options.userContext - Free-text context about the user
    * @param options.proposedResponse - Optional proposed AI response to evaluate for appropriateness
    *
-   * @returns EvaluateResponse with risks, summary, communication, crisis resources, etc.
+   * @returns EvaluateResponse with risks, speaker_severity, rationale, resources, etc.
    *
    * @throws {NopeAuthError} Invalid or missing API key
    * @throws {NopeValidationError} Invalid request payload
@@ -114,10 +114,10 @@ export class NopeClient {
    *   config: { user_country: 'US' }
    * });
    *
-   * if (result.summary.speaker_severity === 'high' || result.summary.speaker_severity === 'critical') {
+   * if (result.speaker_severity === 'high' || result.speaker_severity === 'critical') {
    *   console.log('High risk detected');
-   *   for (const resource of result.crisis_resources) {
-   *     console.log(`  ${resource.name}: ${resource.phone}`);
+   *   if (result.resources?.primary) {
+   *     console.log(`  ${result.resources.primary.name}: ${result.resources.primary.phone}`);
    *   }
    * }
    * ```
@@ -132,9 +132,16 @@ export class NopeClient {
       throw new Error("Only one of 'messages' or 'text' can be provided, not both");
     }
 
-    // Build request payload
+    // Build request payload — normalize config for v1 API compatibility
+    const normalizedConfig: Record<string, unknown> = { ...(config ?? {}) };
+
+    // Map deprecated user_country → country for v1 API
+    if (normalizedConfig.user_country && !normalizedConfig.country) {
+      normalizedConfig.country = normalizedConfig.user_country;
+    }
+
     const payload: Record<string, unknown> = {
-      config: config ?? {},
+      config: normalizedConfig,
     };
 
     if (messages !== undefined) {
@@ -199,6 +206,13 @@ export class NopeClient {
         'Edge-backed classification at $0.003/call. screen() calls the legacy /v0/screen endpoint.'
     );
 
+    if (this.demo) {
+      throw new Error(
+        'screen() is not available in demo mode. Use evaluate() instead — ' +
+          'it uses the same Edge-backed classification and is available via /v1/try/evaluate.'
+      );
+    }
+
     const { messages, text, config } = options;
 
     if (messages === undefined && text === undefined) {
@@ -223,9 +237,8 @@ export class NopeClient {
       payload.config = config;
     }
 
-    // Legacy v0 endpoint
-    const endpoint = this.demo ? '/v0/try/screen' : '/v0/screen';
-    return this.request<ScreenResponse>('POST', endpoint, payload);
+    // Legacy v0 endpoint (requires authentication)
+    return this.request<ScreenResponse>('POST', '/v0/screen', payload);
   }
 
   /**
