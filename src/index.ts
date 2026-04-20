@@ -96,6 +96,11 @@ export type {
   ResourceByIdResponse,
   ResourcesCountriesResponse,
   DetectCountryResponse,
+  // Ocular types
+  OcularOptions,
+  OcularResponse,
+  OcularRisk,
+  OcularComposites,
   // Oversight types
   ConcernLevel,
   Trajectory,

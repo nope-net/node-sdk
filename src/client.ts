@@ -20,6 +20,8 @@ import type {
   EvaluateResponse,
   Message,
   NopeClientOptions,
+  OcularOptions,
+  OcularResponse,
   OversightAnalyzeOptions,
   OversightAnalyzeResponse,
   OversightIngestOptions,
@@ -158,6 +160,43 @@ export class NopeClient {
 
     const endpoint = this.demo ? '/v1/try/evaluate' : '/v1/evaluate';
     return this.request<EvaluateResponse>('POST', endpoint, payload);
+  }
+
+  /**
+   * Behavioral risk assessment via Ocular.
+   *
+   * Returns a verdict-level profile — 8 user-risk axes, 4 AI-behavior
+   * axes, imminence, fiction framing, corroboration, and a top-line
+   * verdict. Individual behavioral code identities are not exposed.
+   *
+   * Either `messages` or `text` must be provided, but not both.
+   *
+   * Currently free (beta). Rate-limited via the standard /v1/* limiter.
+   *
+   * @example
+   * ```typescript
+   * const result = await client.ocular({
+   *   messages: [{ role: 'user', content: 'I feel hopeless' }],
+   * });
+   * console.log(result.risk.verdict, result.risk.subject);
+   * // "watch" "self"
+   * ```
+   */
+  async ocular(options: OcularOptions): Promise<OcularResponse> {
+    const { messages, text } = options;
+
+    if (messages === undefined && text === undefined) {
+      throw new Error("Either 'messages' or 'text' must be provided");
+    }
+    if (messages !== undefined && text !== undefined) {
+      throw new Error("Only one of 'messages' or 'text' can be provided, not both");
+    }
+
+    const payload: Record<string, unknown> = {};
+    if (messages !== undefined) payload.messages = messages;
+    if (text !== undefined) payload.text = text;
+
+    return this.request<OcularResponse>('POST', '/v1/ocular', payload);
   }
 
   /**

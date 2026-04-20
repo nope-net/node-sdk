@@ -1348,3 +1348,119 @@ export interface OversightIngestResponse {
   /** Per-conversation errors (if any) */
   errors?: OversightIngestError[];
 }
+
+// ============================================================================
+// Ocular (behavioral risk assessment — POST /v1/ocular)
+// ============================================================================
+
+/**
+ * Options for client.ocular(). Either `messages` or `text` is required.
+ */
+export interface OcularOptions {
+  /** Conversation messages. */
+  messages?: Message[];
+  /** Plain text input (alternative to messages). */
+  text?: string;
+}
+
+/**
+ * Verdict-level risk profile from Ocular.
+ *
+ * Contains 8 user-risk axes, 4 AI-behavior axes, imminence, fiction-framing,
+ * corroboration, and a top-line verdict. All axis + corroboration scores are
+ * accompanied by a human-readable `*_level` string.
+ *
+ * Individual behavioral code identities are intentionally not exposed. New
+ * axes added by future Ocular versions will appear as additional fields —
+ * this is an open interface, not a closed enum.
+ */
+export interface OcularRisk {
+  /** Top-line verdict. */
+  verdict: 'clear' | 'watch' | 'concern' | 'crisis';
+  /** Who is at risk. 'self' = speaker; 'other' = third party; 'unknown' = ambiguous third-person disclosure. */
+  subject: 'self' | 'other' | 'unknown';
+
+  // 8 user-risk axes (scores 0-1 + '*_level' strings)
+  suicide_risk?: number;
+  suicide_risk_level?: string;
+  self_harm_risk?: number;
+  self_harm_risk_level?: string;
+  harm_to_others_risk?: number;
+  harm_to_others_risk_level?: string;
+  abuse_risk?: number;
+  abuse_risk_level?: string;
+  sexual_violence_risk?: number;
+  sexual_violence_risk_level?: string;
+  exploitation_risk?: number;
+  exploitation_risk_level?: string;
+  stalking_risk?: number;
+  stalking_risk_level?: string;
+  self_neglect_risk?: number;
+  self_neglect_risk_level?: string;
+
+  // 4 AI-behavior axes (when assistant turns present)
+  ai_harm_provision?: number;
+  ai_harm_provision_level?: string;
+  ai_emotional_failure?: number;
+  ai_emotional_failure_level?: string;
+  ai_manipulation?: number;
+  ai_manipulation_level?: string;
+  ai_safeguarding_failure?: number;
+  ai_safeguarding_failure_level?: string;
+
+  // Context modulators
+  imminence?: number;
+  imminence_level?: string;
+  fiction_strength?: number;
+  fiction_framing?: number;
+  genuine_evidence?: number;
+  ecosystem_depth?: number;
+
+  // Corroboration
+  suicide_corroboration?: number;
+  suicide_corroboration_level?: string;
+  harm_to_others_corroboration?: number;
+  harm_to_others_corroboration_level?: string;
+  self_harm_corroboration?: number;
+  self_harm_corroboration_level?: string;
+  abuse_corroboration?: number;
+  abuse_corroboration_level?: string;
+
+  authentic_distress_signal?: number;
+
+  // Forward-compatible: allow future axes to pass through.
+  [key: string]: number | string | undefined;
+}
+
+/** Composite signals — name-keyed (no individual code identifiers). */
+export interface OcularComposites {
+  imminence?: number;
+  user_crisis?: number;
+  user_mania?: number;
+  ai_crisis_failure?: number;
+  ai_harmful_advice?: number;
+  ai_manipulation?: number;
+  ai_safeguarding?: number;
+  [key: string]: number | undefined;
+}
+
+/** Response from POST /v1/ocular. */
+export interface OcularResponse {
+  /** Ocular model version (e.g. 'H31_c42_vllm'). */
+  version: string;
+  /** Response format version. */
+  format?: string;
+  /** Any risk axis above the concern threshold. */
+  concern: boolean;
+  /** Top-line crisis verdict. */
+  crisis: boolean;
+  /** Crisis score 0-1. */
+  crisis_score: number;
+  crisis_level: 'none' | 'mild' | 'moderate' | 'high' | 'critical';
+  /** Verdict-level risk profile. */
+  risk: OcularRisk;
+  /** Composite signals. */
+  composites: OcularComposites;
+  /** Upstream Ocular inference time (ms). */
+  inference_ms?: number;
+}
