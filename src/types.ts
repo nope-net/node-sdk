@@ -1353,6 +1353,16 @@ export interface OversightIngestResponse {
 // Ocular (behavioral risk assessment — POST /v1/ocular)
 // ============================================================================
 
+// =============================================================================
+// Ocular (behavioral risk assessment — /v1/ocular)
+// =============================================================================
+//
+// The customer-facing /v1/ocular response models the post-filter surface the
+// gateway emits. Individual head-code identifiers are stripped by the gateway
+// and are not part of the SDK surface.
+
+export type OcularThoroughness = 'fast' | 'auto' | 'thorough';
+
 /**
  * Options for client.ocular(). Either `messages` or `text` is required.
  */
@@ -1361,106 +1371,116 @@ export interface OcularOptions {
   messages?: Message[];
   /** Plain text input (alternative to messages). */
   text?: string;
+  /**
+   * How many ensemble variants to run. `'fast'` is single-variant (lowest
+   * latency), `'thorough'` populates `stability`. Omit for the server default.
+   */
+  thoroughness?: OcularThoroughness;
+}
+
+/** Per-axis output — level enum + raw score in [0, 1]. */
+export interface OcularAxis {
+  /** One of: minimal | low | moderate | high | critical (imminence may also
+   *  return `not_applicable`). Open string for forward compatibility. */
+  level: string;
+  /** Raw probability in [0, 1]. */
+  score: number;
+}
+
+export type OcularAxisGroup = Record<string, OcularAxis>;
+
+/**
+ * Per-axis signal groups.
+ *
+ * `user` carries 8 axes: suicide, self_harm, harm_to_others, abuse,
+ * sexual_violence, exploitation, stalking, self_neglect.
+ *
+ * `ai` carries 4 axes when assistant turns are present: harm_provision,
+ * emotional_failure, manipulation, safeguarding_failure.
+ */
+export interface OcularSignals {
+  user: OcularAxisGroup;
+  ai: OcularAxisGroup;
 }
 
 /**
- * Verdict-level risk profile from Ocular.
- *
- * Contains 8 user-risk axes, 4 AI-behavior axes, imminence, fiction-framing,
- * corroboration, and a top-line verdict. All axis + corroboration scores are
- * accompanied by a human-readable `*_level` string.
- *
- * Individual behavioral code identities are intentionally not exposed. New
- * axes added by future Ocular versions will appear as additional fields —
- * this is an open interface, not a closed enum.
+ * Per-axis stability in [0, 1] across the variants Ocular ran (higher = more
+ * confident). Returned only when the call was multi-variant; otherwise the
+ * response carries `stability: null`.
  */
-export interface OcularRisk {
-  /** Top-line verdict. */
-  verdict: 'clear' | 'watch' | 'concern' | 'crisis';
-  /** Who is at risk. 'self' = speaker; 'other' = third party; 'unknown' = ambiguous third-person disclosure. */
-  subject: 'self' | 'other' | 'unknown';
-
-  // 8 user-risk axes (scores 0-1 + '*_level' strings)
-  suicide_risk?: number;
-  suicide_risk_level?: string;
-  self_harm_risk?: number;
-  self_harm_risk_level?: string;
-  harm_to_others_risk?: number;
-  harm_to_others_risk_level?: string;
-  abuse_risk?: number;
-  abuse_risk_level?: string;
-  sexual_violence_risk?: number;
-  sexual_violence_risk_level?: string;
-  exploitation_risk?: number;
-  exploitation_risk_level?: string;
-  stalking_risk?: number;
-  stalking_risk_level?: string;
-  self_neglect_risk?: number;
-  self_neglect_risk_level?: string;
-
-  // 4 AI-behavior axes (when assistant turns present)
-  ai_harm_provision?: number;
-  ai_harm_provision_level?: string;
-  ai_emotional_failure?: number;
-  ai_emotional_failure_level?: string;
-  ai_manipulation?: number;
-  ai_manipulation_level?: string;
-  ai_safeguarding_failure?: number;
-  ai_safeguarding_failure_level?: string;
-
-  // Context modulators
-  imminence?: number;
-  imminence_level?: string;
-  fiction_strength?: number;
-  fiction_framing?: number;
-  genuine_evidence?: number;
-  ecosystem_depth?: number;
-
-  // Corroboration
-  suicide_corroboration?: number;
-  suicide_corroboration_level?: string;
-  harm_to_others_corroboration?: number;
-  harm_to_others_corroboration_level?: string;
-  self_harm_corroboration?: number;
-  self_harm_corroboration_level?: string;
-  abuse_corroboration?: number;
-  abuse_corroboration_level?: string;
-
-  authentic_distress_signal?: number;
-
-  // Forward-compatible: allow future axes to pass through.
-  [key: string]: number | string | undefined;
+export interface OcularStability {
+  user: Record<string, number>;
+  ai: Record<string, number>;
+  imminence: number;
 }
 
-/** Composite signals — name-keyed (no individual code identifiers). */
-export interface OcularComposites {
-  imminence?: number;
-  user_crisis?: number;
-  user_mania?: number;
-  ai_crisis_failure?: number;
-  ai_harmful_advice?: number;
-  ai_manipulation?: number;
-  ai_safeguarding?: number;
-  [key: string]: number | undefined;
+/**
+ * Per-turn trajectory entry — minimal surface, no head codes.
+ *
+ * `salience` is the same continuous score as the top-level field, computed
+ * per turn so callers can plot the conversation arc.
+ */
+export interface OcularTrajectoryEntry {
+  role: string;
+  turn: number;
+  salience: number;
 }
 
-/** Response from POST /v1/ocular. */
-export interface OcularResponse {
-  /** Ocular model version (e.g. 'H31_c42_vllm'). */
+/** Response metadata. */
+export interface OcularMeta {
+  /** Ocular model build identifier. */
   version: string;
-  /** Response format version. */
-  format?: string;
-  /** Any risk axis above the concern threshold. */
-  concern: boolean;
-  /** Top-line crisis verdict. */
-  crisis: boolean;
-  /** Crisis score 0-1. */
-  crisis_score: number;
-  crisis_level: 'none' | 'mild' | 'moderate' | 'high' | 'critical';
-  /** Verdict-level risk profile. */
-  risk: OcularRisk;
-  /** Composite signals. */
-  composites: OcularComposites;
   /** Upstream Ocular inference time (ms). */
-  inference_ms?: number;
+  inference_ms: number;
+  /** Present only when the input was windowed at the gateway. */
+  windowed?: boolean;
+  /** Number of windows the input was split into. */
+  windows?: number;
+  /** True if any window's content was truncated to fit. */
+  truncated?: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * Response from POST /v1/ocular.
+ *
+ * Customer code keys decisions off the continuous `salience` score in
+ * [0, 1] plus the structural axes under `signals.user.*` (8 axes) and
+ * `signals.ai.*` (4 axes). Pick the threshold that fits your downstream
+ * action; published guidance uses T_WATCH=0.30 and T_DANGER=0.60 as
+ * reference cutoffs (see docs.nope.net/ocular/risk-interpretation).
+ *
+ * `subject` ('self' / 'other' / 'unknown') identifies who the speaker-side
+ * risk pertains to; `imminence` is a separate axis. `fiction` and
+ * `authenticity` are context modulators already factored into `salience`
+ * and per-axis levels server-side — surface them for inspection, not for
+ * re-aggregation.
+ *
+ * `stability` is only populated when Ocular produced multiple variants on
+ * the call. `trajectory` is present when the input had ≥2 turns; each
+ * entry carries the per-turn salience for plotting.
+ */
+export interface OcularResponse {
+  /** Continuous severity score in [0, 1]. The customer decision contract. */
+  salience: number;
+  /** Who the speaker-side risk pertains to. */
+  subject: string;
+  /** How urgent the concern is (separate axis, not part of `signals`). */
+  imminence: OcularAxis;
+  /** Roleplay/fiction-framing strength in [0, 1] (informational). */
+  fiction: number;
+  /** Authenticity-of-distress signal in [0, 1] (informational). */
+  authenticity: number;
+  /** 8 user-risk axes + 4 AI-behavior axes, each with level + score. */
+  signals: OcularSignals;
+  /** Which ensemble depth the call ran at. */
+  thoroughness: OcularThoroughness;
+  /** Aggregate confidence in [0, 1] across the variants produced (null when single-variant). */
+  confidence: number | null;
+  /** Per-axis stability across variants — null when single-variant. */
+  stability: OcularStability | null;
+  /** Response metadata. */
+  meta: OcularMeta;
+  /** Per-turn salience trail when the input had ≥2 turns. */
+  trajectory?: OcularTrajectoryEntry[];
 }

@@ -165,9 +165,15 @@ export class NopeClient {
   /**
    * Behavioral risk assessment via Ocular.
    *
-   * Returns a verdict-level profile — 8 user-risk axes, 4 AI-behavior
-   * axes, imminence, fiction framing, corroboration, and a top-line
-   * verdict. Individual behavioral code identities are not exposed.
+   * Returns a continuous `salience` score in [0, 1] plus structural axes —
+   * 8 user-risk axes under `signals.user`, 4 AI-behavior axes under
+   * `signals.ai`, an `imminence` axis, and `fiction` / `authenticity`
+   * context modulators. Individual behavioral code identities are not
+   * exposed.
+   *
+   * Customer code keys decisions off `salience`: pick the cutoff that
+   * fits your action. Reference thresholds (T_WATCH=0.30, T_DANGER=0.60)
+   * match the band view in dashboard.nope.net/ocular.
    *
    * Either `messages` or `text` must be provided, but not both.
    *
@@ -178,12 +184,16 @@ export class NopeClient {
    * const result = await client.ocular({
    *   messages: [{ role: 'user', content: 'I feel hopeless' }],
    * });
-   * console.log(result.risk.verdict, result.risk.subject);
-   * // "watch" "self"
+   * console.log(result.salience, result.subject);
+   * // 0.42 "self"
+   * const sui = result.signals.user.suicide;
+   * if (sui && sui.score > 0.5) {
+   *   // escalate ...
+   * }
    * ```
    */
   async ocular(options: OcularOptions): Promise<OcularResponse> {
-    const { messages, text } = options;
+    const { messages, text, thoroughness } = options;
 
     if (messages === undefined && text === undefined) {
       throw new Error("Either 'messages' or 'text' must be provided");
@@ -195,6 +205,7 @@ export class NopeClient {
     const payload: Record<string, unknown> = {};
     if (messages !== undefined) payload.messages = messages;
     if (text !== undefined) payload.text = text;
+    if (thoroughness !== undefined) payload.thoroughness = thoroughness;
 
     return this.request<OcularResponse>('POST', '/v1/ocular', payload);
   }

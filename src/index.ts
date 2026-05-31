@@ -99,8 +99,13 @@ export type {
   // Ocular types
   OcularOptions,
   OcularResponse,
-  OcularRisk,
-  OcularComposites,
+  OcularThoroughness,
+  OcularAxis,
+  OcularAxisGroup,
+  OcularSignals,
+  OcularStability,
+  OcularTrajectoryEntry,
+  OcularMeta,
   // Oversight types
   ConcernLevel,
   Trajectory,
