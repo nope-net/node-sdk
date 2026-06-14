@@ -240,4 +240,141 @@ describe('NopeClient', () => {
       ).rejects.toThrow(NopeServerError);
     });
   });
+
+  describe('steer', () => {
+    it('should require systemPrompt', async () => {
+      const client = new NopeClient({ apiKey: 'test_key' });
+      await expect(
+        client.steer({ systemPrompt: '', proposedResponse: 'hi' })
+      ).rejects.toThrow('"systemPrompt" is required');
+    });
+
+    it('should require proposedResponse', async () => {
+      const client = new NopeClient({ apiKey: 'test_key' });
+      await expect(
+        // @ts-expect-error intentionally omitting proposedResponse
+        client.steer({ systemPrompt: 'be nice' })
+      ).rejects.toThrow('"proposedResponse" is required');
+    });
+
+    it('should POST to /v1/steer with snake_case payload', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            outcome: 'REDEEMED',
+            compliant: false,
+            modified: true,
+            response: "I'm a cooking assistant — happy to help with recipes!",
+            stages: {
+              preprocess: { red_lines: 1, watch_items: 0, cached: false, latency_ms: 5 },
+              screen: { passed: false, hits: 1, misses: 0, evasion_patterns: [], latency_ms: 2 },
+              verify: {
+                exit_point: 'ANALYSIS',
+                triage_confidence: 60,
+                analysis_score: 0.4,
+                analysis_compliant: false,
+                latency_ms: 120,
+              },
+            },
+            request_id: 'req_steer1',
+            timestamp: '2024-01-15T12:00:00Z',
+            total_latency_ms: 130,
+          }),
+      });
+
+      const client = new NopeClient({ apiKey: 'test_key' });
+      const result = await client.steer({
+        systemPrompt: 'You are a cooking assistant. Only answer cooking questions.',
+        proposedResponse: 'The capital of France is Paris.',
+        messages: [{ role: 'user', content: 'What is the capital of France?' }],
+        includeAudit: true,
+      });
+
+      expect(result.outcome).toBe('REDEEMED');
+      expect(result.modified).toBe(true);
+      expect(result.stages.verify.exit_point).toBe('ANALYSIS');
+      expect(result.stages.verify.analysis_score).toBe(0.4);
+      expect(result.stages.verify.analysis_compliant).toBe(false);
+
+      const [url, init] = mockFetch.mock.calls[0];
+      expect(url).toBe('https://api.nope.net/v1/steer');
+      const body = JSON.parse((init as RequestInit).body as string);
+      expect(body.system_prompt).toBe('You are a cooking assistant. Only answer cooking questions.');
+      expect(body.proposed_response).toBe('The capital of France is Paris.');
+      expect(body.include_audit).toBe(true);
+      expect(body.messages).toHaveLength(1);
+    });
+
+    it('should route to /v1/try/steer in demo mode', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            outcome: 'COMPLIANT',
+            compliant: true,
+            modified: false,
+            response: 'ok',
+            stages: {
+              preprocess: { red_lines: 0, watch_items: 0, cached: true, latency_ms: 1 },
+              screen: { passed: true, hits: 0, misses: 0, evasion_patterns: [], latency_ms: 1 },
+              verify: { exit_point: 'TRIAGE', triage_confidence: 99, latency_ms: 10 },
+            },
+            request_id: 'req_steer2',
+            timestamp: '2024-01-15T12:00:00Z',
+            total_latency_ms: 12,
+          }),
+      });
+
+      const client = new NopeClient({ demo: true });
+      await client.steer({ systemPrompt: 'be nice', proposedResponse: 'hello' });
+
+      expect(mockFetch.mock.calls[0][0]).toBe('https://api.nope.net/v1/try/steer');
+    });
+  });
+
+  describe('signpostSearch', () => {
+    it('should require query', async () => {
+      const client = new NopeClient({ apiKey: 'test_key' });
+      await expect(client.signpostSearch({ query: '' })).rejects.toThrow('"query" is required');
+    });
+
+    it('should GET /v1/signpost/search with query params', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            query: 'lgbtq support',
+            country: 'US',
+            results: [
+              { id: 'abc', name: 'Trevor Project', phone: '1-866-488-7386', similarity: 0.82 },
+            ],
+            count: 1,
+            timing: { embed_ms: 12, search_ms: 8, total_ms: 20 },
+          }),
+      });
+
+      const client = new NopeClient({ apiKey: 'test_key' });
+      const result = await client.signpostSearch({
+        query: 'lgbtq support',
+        country: 'us',
+        limit: 5,
+        threshold: 0.4,
+      });
+
+      expect(result.count).toBe(1);
+      expect(result.results[0].similarity).toBe(0.82);
+      expect(result.timing.total_ms).toBe(20);
+
+      const url = mockFetch.mock.calls[0][0] as string;
+      expect(url).toContain('/v1/signpost/search?');
+      expect(url).toContain('query=lgbtq+support');
+      expect(url).toContain('country=US');
+      expect(url).toContain('limit=5');
+      expect(url).toContain('threshold=0.4');
+    });
+  });
 });

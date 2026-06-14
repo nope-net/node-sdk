@@ -978,6 +978,62 @@ export type SignpostByIdResponse = ResourceByIdResponse;
 export type SignpostCountriesResponse = ResourcesCountriesResponse;
 
 // =============================================================================
+// Signpost Search Types (vector semantic search — GET /v1/signpost/search)
+// =============================================================================
+
+/** Options for the signpostSearch method. */
+export interface SignpostSearchOptions {
+  /** Natural language search query (max 500 chars). */
+  query: string;
+
+  /** Optional ISO 3166-1 alpha-2 country code to filter results. */
+  country?: string;
+
+  /** Maximum number of results (default: 10, max: 50). */
+  limit?: number;
+
+  /** Similarity threshold in [0, 1] (default: 0.3). Higher = stricter. */
+  threshold?: number;
+}
+
+/**
+ * A single semantic-search hit.
+ *
+ * Carries all the flattened {@link CrisisResource} fields (the gateway lifts
+ * contact methods to the top level and computes `open_status`) plus the
+ * vector `similarity` score for this query.
+ */
+export interface SignpostSearchResult extends CrisisResource {
+  /** Vector similarity to the query in [0, 1]; higher = more relevant. */
+  similarity?: number;
+}
+
+/** Response from GET /v1/signpost/search endpoint. */
+export interface SignpostSearchResponse {
+  /** The search query that was run. */
+  query: string;
+
+  /** Country filter applied, or null when unfiltered. */
+  country: string | null;
+
+  /** Resources ranked by semantic similarity to the query. */
+  results: SignpostSearchResult[];
+
+  /** Number of results returned. */
+  count: number;
+
+  /** Timing breakdown for the search. */
+  timing: {
+    /** Time spent embedding the query (ms). */
+    embed_ms: number;
+    /** Time spent on the vector search (ms). */
+    search_ms: number;
+    /** Total time (embed + search) (ms). */
+    total_ms: number;
+  };
+}
+
+// =============================================================================
 // Oversight Types (for /v1/oversight/* endpoints)
 // =============================================================================
 
@@ -1483,4 +1539,156 @@ export interface OcularResponse {
   meta: OcularMeta;
   /** Per-turn salience trail when the input had ≥2 turns. */
   trajectory?: OcularTrajectoryEntry[];
+}
+
+// =============================================================================
+// Steer (system-prompt compliance verification — /v1/steer)
+// =============================================================================
+
+/**
+ * Verification outcome.
+ *
+ * - `COMPLIANT`: the proposed response already follows the system prompt.
+ * - `REDEEMED`: the response violated a rule and was rewritten; use `response`.
+ * - `CANNOT_COMPLY`: the system prompt itself is unprocessable (see
+ *   `cannot_comply`); `response` is empty and `compliant` is false.
+ */
+export type SteerOutcome = 'COMPLIANT' | 'REDEEMED' | 'CANNOT_COMPLY';
+
+/** Why a system prompt was rejected as unprocessable. */
+export type SteerCannotComplyCategory =
+  | 'violence'
+  | 'csam'
+  | 'terrorism'
+  | 'safety_circumvention'
+  | 'other';
+
+/** Options for client.steer(). */
+export interface SteerOptions {
+  /** The system prompt defining the rules the AI should follow. */
+  systemPrompt: string;
+
+  /** The proposed AI response to verify against the system prompt. */
+  proposedResponse: string;
+
+  /**
+   * Optional conversation history for context. When provided, the last
+   * message must have `role: 'user'`.
+   */
+  messages?: Message[];
+
+  /** Include the detailed audit trail in the response. */
+  includeAudit?: boolean;
+}
+
+/** System-prompt quality assessment. */
+export interface PromptQuality {
+  /** Overall score, 0-100. */
+  score: number;
+  /** Letter grade derived from `score`. */
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  /** Per-dimension scores. */
+  dimensions: {
+    specificity: number;
+    extractability: number;
+    consistency: number;
+    completeness: number;
+    testability: number;
+    actionability?: number;
+  };
+  /** Human-readable issues found with the prompt. */
+  issues: string[];
+}
+
+/** Present when `outcome` is `CANNOT_COMPLY`. */
+export interface SteerCannotComply {
+  /** Why the system prompt is unprocessable. */
+  reason: string;
+  /** The category of concern. */
+  category: SteerCannotComplyCategory;
+}
+
+/** Conversation context echoed back when `messages` were supplied. */
+export interface SteerConversationContext {
+  turn_count: number;
+  triggering_user_message?: string;
+}
+
+/** Preprocess stage — red lines and watch items extracted from the prompt. */
+export interface SteerPreprocessStage {
+  red_lines: number;
+  watch_items: number;
+  persona?: string;
+  cached: boolean;
+  latency_ms: number;
+}
+
+/** Screen stage — deterministic string/regex/evasion checks. */
+export interface SteerScreenStage {
+  passed: boolean;
+  /** Forbidden items found in the response. */
+  hits: number;
+  /** Required items not found. */
+  misses: number;
+  /** Detected evasion attempts. */
+  evasion_patterns: string[];
+  latency_ms: number;
+}
+
+/**
+ * Verify stage — LLM verification with early exits.
+ *
+ * `analysis_score` / `analysis_compliant` are populated only when the
+ * analysis exit point ran (i.e. triage did not resolve the outcome).
+ *
+ * Note: docs.nope.net documents a richer planned shape (a nested
+ * `analysis` object with per-rule fulfilment, and a `redemption` block).
+ * That is not yet emitted by the production gateway, which returns the
+ * flat fields below. Forward-compatible extra fields are preserved at
+ * runtime when the API begins returning them.
+ */
+export interface SteerVerifyStage {
+  exit_point: 'TRIAGE' | 'ANALYSIS' | 'REDEMPTION';
+  /** Triage confidence, 0-100. */
+  triage_confidence: number;
+  /** Overall compliance score in [0, 1] (present when analysis ran). */
+  analysis_score?: number;
+  /** Whether analysis judged the response compliant (present when analysis ran). */
+  analysis_compliant?: boolean;
+  latency_ms: number;
+}
+
+/** The three-stage pipeline breakdown. */
+export interface SteerStages {
+  preprocess: SteerPreprocessStage;
+  screen: SteerScreenStage;
+  verify: SteerVerifyStage;
+}
+
+/** Response from POST /v1/steer. */
+export interface SteerResponse {
+  /** Verification outcome. */
+  outcome: SteerOutcome;
+  /** Whether the original response was compliant. */
+  compliant: boolean;
+  /** Whether the response was modified (redeemed). */
+  modified: boolean;
+  /** Final response — original if compliant, redeemed if not, empty if CANNOT_COMPLY. */
+  response: string;
+  /** Present when `outcome` is `CANNOT_COMPLY`. */
+  cannot_comply?: SteerCannotComply;
+  /** Present when `messages` were supplied. */
+  conversation?: SteerConversationContext;
+  /** System-prompt quality assessment. */
+  prompt_quality?: PromptQuality;
+  /** Pipeline stage details. */
+  stages: SteerStages;
+  /** Detailed audit trail (present when `includeAudit` was true). */
+  audit?: unknown;
+  /** Request id. */
+  request_id: string;
+  /** ISO 8601 timestamp. */
+  timestamp: string;
+  /** Total latency (ms). */
+  total_latency_ms: number;
 }
