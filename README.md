@@ -54,13 +54,13 @@ if (result.show_resources && result.resources) {
 }
 ```
 
-## Crisis Screening (SB243 Compliance)
+## Crisis Screening
 
-> **Deprecation Notice**: The `screen()` method is deprecated. Use `evaluate()` instead, which now
-> uses Edge-backed classification at **$0.003/call** (previously $0.05). The new `/v1/evaluate`
-> provides the same regulatory compliance features with improved accuracy.
+> **Deprecation Notice**: The `screen()` method is deprecated. Use `evaluate()` instead —
+> the `/v1/evaluate` endpoint (**$0.003/call**, previously $0.05) provides the same
+> classification signals with improved accuracy.
 
-For SB243/regulatory compliance, use `evaluate()`:
+For crisis screening, use `evaluate()`:
 
 ```typescript
 const result = await client.evaluate({
@@ -244,7 +244,7 @@ const result = await client.evaluate({
 
 ## Response Structure
 
-The v1 API uses Edge-backed classification with a simplified response format:
+The v1 API uses a simplified response format:
 
 ```typescript
 const result = await client.evaluate({ messages: [...], config: { user_country: 'US' } });

@@ -432,28 +432,28 @@ export interface EvaluateConfig {
    */
   user_country?: string;
 
-  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
+  /** @deprecated v0-only. Ignored by the v1 endpoint. */
   locale?: string;
 
-  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
+  /** @deprecated v0-only. Ignored by the v1 endpoint. */
   user_age_band?: 'adult' | 'minor' | 'unknown';
 
-  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
+  /** @deprecated v0-only. Ignored by the v1 endpoint. */
   policy_id?: string;
 
   /** Include crisis resources in response. Default: true */
   include_resources?: boolean;
 
-  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
+  /** @deprecated v0-only. Ignored by the v1 endpoint. */
   return_assistant_reply?: boolean;
 
-  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
+  /** @deprecated v0-only. Ignored by the v1 endpoint. */
   assistant_safety_mode?: 'template' | 'generate';
 
-  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
+  /** @deprecated v0-only. Ignored by the v1 endpoint. */
   use_multiple_judges?: boolean;
 
-  /** @deprecated v0-only. Ignored by the v1 Edge-backed endpoint. */
+  /** @deprecated v0-only. Ignored by the v1 endpoint. */
   models?: string[];
 
   /** Customer-provided conversation ID for webhook correlation */
@@ -503,7 +503,7 @@ export interface ResponseMetadata {
 /**
  * Response from /v1/evaluate endpoint
  *
- * Note: The v1 API now uses Edge-backed classification with a simplified response.
+ * Note: The v1 API returns a simplified response.
  * Some fields from legacy v0 responses may not be present.
  */
 export interface EvaluateResponse {
@@ -516,7 +516,7 @@ export interface EvaluateResponse {
   /** Identified risks (the core of v1) */
   risks: Risk[];
 
-  // === v1 Edge-backed response fields ===
+  // === v1 response fields ===
 
   /** Chain-of-thought reasoning from Edge model (v1 only) */
   rationale?: string;
