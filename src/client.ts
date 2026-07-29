@@ -44,8 +44,6 @@ import type {
   SignpostSearchResponse,
   SignpostSmartOptions,
   SignpostSmartResponse,
-  SteerOptions,
-  SteerResponse,
 } from './types.js';
 
 const DEFAULT_BASE_URL = 'https://api.nope.net';
@@ -212,75 +210,6 @@ export class NopeClient {
     if (thoroughness !== undefined) payload.thoroughness = thoroughness;
 
     return this.request<OcularResponse>('POST', '/v1/ocular', payload);
-  }
-
-  /**
-   * Verify that a proposed AI response complies with its system prompt.
-   *
-   * Steer runs a PREPROCESS → SCREEN → VERIFY pipeline and returns one of
-   * three outcomes:
-   * - `COMPLIANT`: the response already follows the rules.
-   * - `REDEEMED`: the response violated a rule and was rewritten — use the
-   *   returned `response`.
-   * - `CANNOT_COMPLY`: the system prompt itself is unprocessable (see
-   *   `cannot_comply`); `response` is empty.
-   *
-   * Costs $0.001/call. In demo mode this calls the unauthenticated
-   * `/v1/try/steer` endpoint (stricter input limits apply).
-   *
-   * @param options - Steer options
-   * @param options.systemPrompt - The rules the AI should follow
-   * @param options.proposedResponse - The AI response to verify
-   * @param options.messages - Optional conversation history (must end with a user message)
-   * @param options.includeAudit - Include the detailed audit trail in the response
-   *
-   * @returns SteerResponse with outcome, final response, and pipeline stage details
-   *
-   * @throws {NopeAuthError} Invalid or missing API key
-   * @throws {NopeValidationError} Invalid request payload
-   * @throws {NopeRateLimitError} Rate limit exceeded
-   * @throws {NopeServerError} Server error
-   * @throws {NopeConnectionError} Connection failed
-   *
-   * @example
-   * ```typescript
-   * const result = await client.steer({
-   *   systemPrompt: 'You are a cooking assistant. Only answer cooking questions.',
-   *   proposedResponse: 'The capital of France is Paris.',
-   *   messages: [{ role: 'user', content: 'What is the capital of France?' }],
-   * });
-   *
-   * if (result.outcome === 'REDEEMED') {
-   *   console.log('Use this instead:', result.response);
-   * } else if (result.outcome === 'CANNOT_COMPLY') {
-   *   console.log('Unprocessable prompt:', result.cannot_comply?.reason);
-   * }
-   * ```
-   */
-  async steer(options: SteerOptions): Promise<SteerResponse> {
-    const { systemPrompt, proposedResponse, messages, includeAudit } = options;
-
-    if (!systemPrompt) {
-      throw new Error('"systemPrompt" is required');
-    }
-    if (proposedResponse === undefined || proposedResponse === null) {
-      throw new Error('"proposedResponse" is required');
-    }
-
-    const payload: Record<string, unknown> = {
-      system_prompt: systemPrompt,
-      proposed_response: proposedResponse,
-    };
-
-    if (messages !== undefined) {
-      payload.messages = messages;
-    }
-    if (includeAudit !== undefined) {
-      payload.include_audit = includeAudit;
-    }
-
-    const endpoint = this.demo ? '/v1/try/steer' : '/v1/steer';
-    return this.request<SteerResponse>('POST', endpoint, payload);
   }
 
   /**

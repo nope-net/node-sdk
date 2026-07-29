@@ -108,18 +108,6 @@ export type {
   SignpostSearchOptions,
   SignpostSearchResult,
   SignpostSearchResponse,
-  // Steer types
-  SteerOptions,
-  SteerResponse,
-  SteerOutcome,
-  SteerCannotComplyCategory,
-  SteerCannotComply,
-  SteerConversationContext,
-  PromptQuality,
-  SteerPreprocessStage,
-  SteerScreenStage,
-  SteerVerifyStage,
-  SteerStages,
   // Ocular types
   OcularOptions,
   OcularResponse,

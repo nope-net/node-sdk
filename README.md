@@ -135,39 +135,6 @@ console.log(`Dashboard: ${result.dashboard_url}`);
 
 > **Note**: Oversight is currently in limited access. Contact us at nope.net if you'd like access.
 
-## Steer (System Prompt Compliance)
-
-Steer verifies that a proposed AI response complies with the rules in its system prompt. If the response violates a rule, Steer rewrites it (`REDEEMED`) so you can use the corrected text directly:
-
-```typescript
-const result = await client.steer({
-  systemPrompt: 'You are a cooking assistant. Only answer cooking questions.',
-  proposedResponse: 'The capital of France is Paris.',
-  messages: [{ role: 'user', content: 'What is the capital of France?' }],
-});
-
-switch (result.outcome) {
-  case 'COMPLIANT':
-    // Response already follows the rules — send it as-is.
-    break;
-  case 'REDEEMED':
-    // Response was rewritten to comply — use the corrected text.
-    console.log('Use instead:', result.response);
-    break;
-  case 'CANNOT_COMPLY':
-    // The system prompt itself is unprocessable.
-    console.log('Rejected:', result.cannot_comply?.reason, result.cannot_comply?.category);
-    break;
-}
-
-// Inspect the pipeline if you want to handle violations yourself.
-console.log(result.stages.verify.exit_point);          // TRIAGE | ANALYSIS | REDEMPTION
-console.log(result.stages.verify.analysis_score);      // 0..1 compliance (when analysis ran)
-console.log(result.stages.screen.evasion_patterns);    // detected evasion attempts
-```
-
-Steer costs $0.001/call. In demo mode (`new NopeClient({ demo: true })`) it calls the unauthenticated `/v1/try/steer` endpoint, which applies stricter input limits.
-
 ## Signpost (Crisis Resources API)
 
 Look up crisis helplines by country, with optional AI-powered ranking:
