@@ -620,7 +620,8 @@ export class NopeClient<Demo extends boolean = false> {
 
   /**
    * Balance, usage and pricing. Amounts are in mills (1 mill = $0.001).
-   * Not available in demo mode; `pricing()` needs no key on a normal client.
+   * `pricing()` is public and works on any client, demo included; the other
+   * calls need an API key and refuse demo mode.
    */
   readonly billing = {
     /** Current balance, estimates, top-up history and options. */
@@ -653,7 +654,6 @@ export class NopeClient<Demo extends boolean = false> {
 
     /** Public price list (no key needed). */
     pricing: async (): Promise<BillingPricingResponse> => {
-      this.requireNotDemo('billing.pricing()');
       return this.transport.request<BillingPricingResponse>('GET', '/v1/billing/pricing');
     },
 

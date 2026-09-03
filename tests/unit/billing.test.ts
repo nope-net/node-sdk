@@ -94,11 +94,14 @@ describe('client.billing', () => {
     await expect(new NopeClient({ fetch: ff.fetch }).billing.balance()).rejects.toBeInstanceOf(NopeAuthError);
   });
 
-  it('is not available in demo mode', async () => {
-    const ff = new FakeFetch();
+  it('pricing is public, so a demo client can read it; the key-gated calls still refuse', async () => {
+    const ff = new FakeFetch(json(200, PRICING));
     const client = new NopeClient({ demo: true, fetch: ff.fetch });
+    const result = await client.billing.pricing();
+    expect(ff.last.url).toBe('https://api.nope.net/v1/billing/pricing');
+    expect(ff.last.headers.authorization).toBeUndefined();
+    expect(result.unit).toBe('mills');
     await expect(client.billing.balance()).rejects.toThrow('not available in demo mode');
-    await expect(client.billing.pricing()).rejects.toThrow('not available in demo mode');
-    expect(ff.requests).toHaveLength(0);
+    expect(ff.requests).toHaveLength(1);
   });
 });

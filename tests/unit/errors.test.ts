@@ -85,6 +85,21 @@ describe('error mapping', () => {
     expect(err.message).toBe('Missing or invalid Authorization header');
   });
 
+  it('400 with an explicit code (Oversight validation body) -> code from body.code, message from error', async () => {
+    const ff = new FakeFetch(
+      json(400, {
+        error: '"conversation" is required',
+        code: 'missing_conversation',
+        details: { field: 'conversation' },
+      }),
+    );
+    const err = (await capture(client(ff).signpostCountries())) as NopeValidationError;
+    expect(err).toBeInstanceOf(NopeValidationError);
+    expect(err.code).toBe('missing_conversation');
+    expect(err.message).toBe('"conversation" is required');
+    expect(err.details).toEqual({ details: { field: 'conversation' } });
+  });
+
   it('402 evaluate -> NopeInsufficientBalanceError with balance fields and topupUrl', async () => {
     const ff = new FakeFetch(derivedReply(derived.INSUFFICIENT_BALANCE_EVALUATE));
     const err = (await capture(client(ff).signpostCountries())) as NopeInsufficientBalanceError;

@@ -81,7 +81,7 @@ describe.sequential('webhooks and billing (live)', () => {
     expect(typeof balance.topup_options[0].screens).toBe('number');
     const pricing = await client.billing.pricing();
     expect(typeof pricing.pricing.screen.cost_mills).toBe('number');
-    expect(typeof pricing.pricing.ocular.cost_mills).toBe('number');
+    expect(typeof pricing.pricing.ocular?.cost_mills).toBe('number');
   });
 
   it.skip('row 27c: billing.topup (skipped: creates a Stripe Checkout session)', () => {});

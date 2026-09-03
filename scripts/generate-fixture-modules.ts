@@ -58,12 +58,12 @@ const BINDINGS: Record<string, FixtureBinding> = {
   'signpost/countries.json': { type: 'SignpostCountriesResponse' },
   'signpost/detect-country.miss.json': { type: 'DetectCountryResponse' },
 
-  // Captured 2026-09-03 before API fix A-5 (billing.ts:152-175,308-349):
-  // estimated_screens, topup_options[].screens and pricing.screen.cost_mills
-  // were undefined and several priced endpoints were missing from /pricing.
-  'billing/balance.json': { type: 'BillingBalanceResponse', pending: 'A-5' },
+  // Captured 2026-09-03 before API fix A-5 (billing.ts:152-175,308-349); the
+  // fields that fix adds are typed optional until it deploys, so these check
+  // against the real types.
+  'billing/balance.json': { type: 'BillingBalanceResponse' },
   'billing/usage.json': { type: 'BillingUsageResponse' },
-  'billing/pricing.json': { type: 'BillingPricingResponse', pending: 'A-5' },
+  'billing/pricing.json': { type: 'BillingPricingResponse' },
 
   'errors/400.evaluate-empty.json': { type: 'ApiErrorBody' },
   'errors/400.evaluate-role.json': { type: 'ApiErrorBody' },

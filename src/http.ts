@@ -126,7 +126,10 @@ export function buildResponseMeta(status: number, headers: Headers): ResponseMet
 export function mapErrorResponse(status: number, statusText: string, headers: Headers, text: string): NopeError {
   const body = parseErrorBody(text);
   const errorField = typeof body?.error === 'string' ? body.error : undefined;
-  const code = errorField && CODE_PATTERN.test(errorField) ? errorField : undefined;
+  // An explicit machine code wins (Oversight validation bodies send {error: sentence, code});
+  // otherwise `error` is the code only when it looks like one.
+  const explicitCode = stringField(body, 'code');
+  const code = explicitCode || (errorField && CODE_PATTERN.test(errorField) ? errorField : undefined);
   const message =
     (typeof body?.message === 'string' ? body.message : undefined) ??
     errorField ??
@@ -138,7 +141,7 @@ export function mapErrorResponse(status: number, statusText: string, headers: He
     case 413: {
       const details: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(body ?? {})) {
-        if (k !== 'error' && k !== 'message') details[k] = v;
+        if (k !== 'error' && k !== 'message' && k !== 'code') details[k] = v;
       }
       return new NopeValidationError(message, { ...base, statusCode: status, details });
     }
