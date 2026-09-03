@@ -149,9 +149,9 @@ in the repository and never tagged or published; its one change (removal of
 
 ### Fixed
 
-- Demo `evaluate()` sends `config.country` as `user_country` as well, which
-  the `/v1/try/evaluate` route reads until API fix A-1 deploys. 3.x dropped
-  the country on that route.
+- Demo `evaluate()` sends `config.country`, mirrored as `config.user_country`
+  (the older spelling the `/v1/try/evaluate` route accepts when `country` is
+  absent). 3.x dropped the country on that route.
 - Docstrings no longer mention `nope_test_` keys, describe `trajectory` as
   present only with `per_turn`, price Ocular at $0.0001 per call, and use
   scope values the API accepts.

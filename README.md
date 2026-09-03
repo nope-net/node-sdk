@@ -75,12 +75,13 @@ per-IP rate-limited `/v1/try/*` endpoints:
 
 | Method | Demo route | Differences from the authenticated route |
 |---|---|---|
-| `evaluate` | `/v1/try/evaluate` | Keeps the last 10 messages, always returns resources, adds `metadata.try_endpoint` and `metadata.model`. Until API fix A-1 deploys the route reads `config.user_country`, which the client sends alongside `config.country`. 10 calls per minute per IP. |
+| `evaluate` | `/v1/try/evaluate` | Keeps the last 10 messages, honours `include_resources`, adds `metadata.try_endpoint` and `metadata.model`. The route reads `config.country`; the client also sends the value as `config.user_country`, the older spelling the route accepts when `country` is absent. 10 calls per minute per IP. |
 | `oversight.analyze` | `/v1/try/oversight/analyze` | Returns `{ mode, result, try_endpoint }` (`OversightDemoAnalyzeResponse`). Ignores `config.strategy` and `config.model`, keeps only `role` and `content`, accepts at most 20 messages. |
 | `ocular` | `/v1/try/ocular` | Returns `OcularDemoResponse`, which adds `heads` and `detail` under public family names. At most 12 messages or 4,000 characters. With `per_turn` it returns `trajectory` but never `trajectory_shape`. |
 | `signpostSmart` | `/v1/try/signpost/smart` | Adds `try_endpoint: true`. |
 
-Every other method throws `... is not available in demo mode` before any
+Every other method throws `NopeValidationError` (`... is not available in
+demo mode`, `code: 'not_available_in_demo'`, no `statusCode`) before any
 request is sent.
 
 ## Evaluate
@@ -97,7 +98,7 @@ characters). `config` takes the four keys the route reads:
 | `end_user_id` | Echoed on `evaluate.alert` webhook payloads as `user_id`. |
 
 ```typescript
-import { NopeClient, calculateSpeakerSeverity } from '@nope-net/sdk';
+import { NopeClient, calculateSpeakerSeverity, type EvaluateResource } from '@nope-net/sdk';
 
 const client = new NopeClient({ apiKey: process.env.NOPE_API_KEY });
 
@@ -113,12 +114,17 @@ for (const risk of result.risks) {
 // speaker_severity is the highest severity among risks with subject 'self'.
 console.log(calculateSpeakerSeverity(result.risks) === result.speaker_severity);
 console.log(result.request_id, result.timestamp, result.metadata?.input_format);
+
+// resources.primary and resources.secondary[] are EvaluateResource: a CrisisResource plus `why`.
+const top: EvaluateResource | undefined = result.resources?.primary;
+console.log(top?.name, top?.why);
 ```
 
 `EvaluateResponse` fields: `risks: Risk[]`, `rationale`, `speaker_severity`,
-`speaker_imminence`, `show_resources`, `resources?` (`primary` and up to
-three `secondary`, each a `CrisisResource` with a one-line `why`),
-`request_id`, `timestamp`, `metadata?`.
+`speaker_imminence`, `show_resources`, `resources?` (an `EvaluateResources`:
+`primary` and up to three `secondary`, each an `EvaluateResource`, which is
+a `CrisisResource` plus a one-line `why`), `request_id`, `timestamp`,
+`metadata?`.
 
 `Risk` is `{ type, subject, severity, imminence, features? }`. `subject` is
 `self` or `other`. Severity runs `none | mild | moderate | high | critical`;
@@ -128,9 +134,11 @@ The nine risk types are `suicide`, `self_harm`, `self_neglect`, `violence`,
 
 ### Legacy screen()
 
-`client.screen()` still calls `/v0/screen` ($0.001 per call) and is
-deprecated in favour of `evaluate()`. It logs one warning per process and is
-refused in demo mode. `ScreenConfig` is `{ country?, debug?, include_recommended_reply? }`.
+`client.screen()` is deprecated: use `evaluate()` ($0.003 per call). It
+still calls the legacy `/v0/screen` endpoint ($0.001 per call), which
+carries a sunset of 2027-01-01. The client logs one warning per process
+saying so, and refuses the call in demo mode. `ScreenConfig` is
+`{ country?, debug?, include_recommended_reply? }`.
 
 ## Ocular
 
@@ -244,8 +252,8 @@ for (const behavior of result.detected_behaviors) {
   mutually exclusive; codes and categories come from the exported
   `OversightBehaviorCode` and `OversightBehaviorCategory` unions
   (`OVERSIGHT_BEHAVIOR_CODES`, `OVERSIGHT_BEHAVIOR_CATEGORIES`).
-- `bot_context` is accepted by the API; server-side propagation into the
-  analysis is being fixed.
+- `bot_context` is passed into the analysis as conversation metadata, so
+  the analyzer knows what the persona is meant to do.
 - Turn numbers in results count assistant turns from 1.
 
 Batch analysis with dashboard storage takes up to 300 conversations, each
@@ -292,10 +300,11 @@ import { NopeClient } from '@nope-net/sdk';
 
 const client = new NopeClient({ apiKey: process.env.NOPE_API_KEY });
 
-// Basic lookup (free, key required)
+// Basic lookup (free, key required). urgent: true keeps every match and ranks the
+// 24/7 ones first among resources tied on relevance and priority tier.
 const basic = await client.signpost({ country: 'GB', scopes: ['suicide'], subdivisions: ['GB-NIR'], urgent: true });
 for (const resource of basic.resources) {
-  console.log(resource.type, resource.name, resource.phone ?? resource.website_url, resource.open_status?.message);
+  console.log(resource.type, resource.name, resource.is_24_7, resource.phone ?? resource.website_url, resource.open_status?.message);
 }
 
 // Ranked for a described situation ($0.001 per call, up to 5 picks)
@@ -316,6 +325,11 @@ const countries = await client.signpostCountries();
 const geo = await client.detectCountry({ countryHint: 'GB' });
 console.log(one.resource.name, countries.count, geo.detected ? geo.country_code : 'unknown');
 ```
+
+`urgent: true` is a ranking hint, not a filter: the API keeps every
+matching resource and, where two resources tie on relevance score and
+priority tier, places the one flagged `is_24_7` first. Resources without
+24/7 hours still appear in the list.
 
 `detectCountry()` reads geo headers a proxy injects (`cf-ipcountry`,
 `x-country`, `x-vercel-ip-country`). Called directly against api.nope.net it
@@ -348,11 +362,11 @@ import { Webhook, WebhookSignatureError } from '@nope-net/sdk';
 
 app.post('/webhooks/nope', (req, res) => {
   try {
-    const { payload, eventId } = Webhook.verifyRequest(req.body, req.headers, process.env.NOPE_WEBHOOK_SECRET!);
+    const { payload, deliveryId } = Webhook.verifyRequest(req.body, req.headers, process.env.NOPE_WEBHOOK_SECRET!);
 
     switch (payload.event) {
       case 'evaluate.alert':
-        console.log(eventId, payload.conversation_id, payload.risk_summary.overall_severity);
+        console.log(deliveryId, payload.conversation_id, payload.risk_summary.overall_severity);
         break;
       case 'oversight.alert':
         console.log(payload.conversation_id, payload.concern, payload.behaviors.map((b) => b.code));
@@ -377,14 +391,21 @@ app.post('/webhooks/nope', (req, res) => {
 
 `Webhook.verify(body, signature, timestamp, secret, { maxAgeSeconds })`
 takes the two header values directly. `maxAgeSeconds` defaults to 300;
-`0` disables the timestamp check. `eventId` equals `payload.event_id` and is
-the key to deduplicate the API's retries (four attempts over an hour).
+`0` disables the timestamp check. `verifyRequest` also returns
+`deliveryId` (the `X-NOPE-Delivery-ID` header: the stored delivery's id,
+repeated on each of the API's four retry attempts over an hour, so it is
+the key to deduplicate them), `eventType` (`X-NOPE-Event`) and `webhookId`
+(`X-NOPE-Webhook-ID`). `deliveryId` is not `payload.event_id`, and it is
+`undefined` when the header is absent, as on a body signed locally with
+`Webhook.sign`. `eventId` is a deprecated alias of `deliveryId`.
 
-For tests, `Webhook.sign(body, secret)` produces the signature and timestamp
-the API would send:
+For tests, `Webhook.sign(body, secret, timestamp?)` produces the signature
+and timestamp the API would send. The optional third argument (unix
+seconds) fixes the moment the signature is bound to, which is how to
+exercise the stale-timestamp path:
 
 ```typescript
-import { Webhook } from '@nope-net/sdk';
+import { Webhook, WebhookSignatureError } from '@nope-net/sdk';
 
 const body = JSON.stringify({
   event: 'test.ping',
@@ -396,6 +417,13 @@ const body = JSON.stringify({
 const { signature, timestamp } = Webhook.sign(body, 'whsec_local');
 const payload = Webhook.verify(body, signature, timestamp, 'whsec_local');
 console.log(payload.event);
+
+const stale = Webhook.sign(body, 'whsec_local', Math.floor(Date.now() / 1000) - 600);
+try {
+  Webhook.verify(body, stale.signature, stale.timestamp, 'whsec_local');
+} catch (err) {
+  console.log(err instanceof WebhookSignatureError, (err as Error).message); // true, "Timestamp too old: 600s ago (max: 300s)"
+}
 ```
 
 ### Managing webhook endpoints
@@ -456,9 +484,9 @@ console.log(checkout.checkout_url);
 
 ## Errors, retries and response metadata
 
-Every error extends `NopeError` and carries `statusCode`, `code` (the API's
-machine string, such as `insufficient_balance`, when the body has one),
-`message` and `responseBody`.
+Every error extends `NopeError` and carries `statusCode`, `code`, `message`,
+`responseBody` (the raw response text) and `body` (the same text parsed,
+when it was a JSON object).
 
 | Status | Class | Extra fields |
 |---|---|---|
@@ -471,6 +499,20 @@ machine string, such as `insufficient_balance`, when the body has one),
 | 503 | `NopeServiceUnavailableError` | `retryAfter` (seconds); extends `NopeServerError` |
 | other 5xx | `NopeServerError` | `retryAfter` when a header was sent |
 | no response | `NopeConnectionError` | `originalError`; covers the client-side timeout |
+
+Client-side validation (an empty `messages` array, a role other than
+`user` or `assistant`, more than 100 messages, neither `messages` nor
+`text`, and the per-method checks above) and demo-mode refusals throw
+`NopeValidationError` before any request is sent. Those errors have no
+`statusCode`; their `code` is `invalid_request` or
+`not_available_in_demo`, and `details` is empty.
+
+For API errors, `code` is present only when the API sends a machine string
+in the body. Today 402 and 429 always do (`insufficient_balance`,
+`rate_limit_exceeded`), 403 and 503 do on some bodies
+(`paid_plan_required`, `auth_unavailable`), and 400, 401, 404 and 413 carry
+a sentence, so `code` is `undefined` there. Branch on the class or on
+`statusCode`, and read `code` only as extra detail.
 
 ```typescript
 import {
@@ -496,13 +538,14 @@ try {
   } else if (error instanceof NopeRateLimitError) {
     console.log(`Rate limited; retry after ${error.retryAfter} seconds`);
   } else if (error instanceof NopeValidationError) {
-    console.log(error.message, error.details);
+    // statusCode is undefined when the SDK rejected the input before sending (code 'invalid_request').
+    console.log(error.statusCode ?? 'client-side', error.code, error.message, error.details);
   } else if (error instanceof NopeAuthError) {
     console.log('Invalid API key');
   } else if (error instanceof NopeServiceUnavailableError) {
     console.log(`Temporarily unavailable; retry after ${error.retryAfter} seconds`);
   } else if (error instanceof NopeServerError) {
-    console.log(`Server error ${error.statusCode}`);
+    console.log(`Server error ${error.statusCode}`, error.body?.error ?? error.responseBody);
   } else if (error instanceof NopeConnectionError) {
     console.log('No response', error.originalError?.message);
   } else {
@@ -532,6 +575,7 @@ client that may be either as `NopeClient<boolean>`.
 ```typescript
 import type {
   EvaluateResponse,
+  EvaluateResource,
   Risk,
   CrisisResource,
   OcularResponse,

@@ -206,9 +206,8 @@ export class NopeClient<Demo extends boolean = false> {
    * non-empty text.
    *
    * Demo mode routes to `/v1/try/evaluate`: no key, per-IP rate limit, the
-   * last 10 messages only, `include_resources: false` ignored, and
-   * `config.country` also sent as `user_country` (the try route reads that
-   * key until API fix A-1 deploys).
+   * last 10 messages only. `config.country` is also sent as `user_country`,
+   * the older spelling the try route accepts when `country` is absent.
    *
    * @param options.messages - Conversation messages
    * @param options.text - Plain text input (free-form transcripts)
@@ -246,7 +245,7 @@ export class NopeClient<Demo extends boolean = false> {
 
     const wireConfig: Record<string, unknown> = { ...(config ?? {}) };
     if (this.demo && config?.country) {
-      // /v1/try/evaluate reads config.user_country (API fix A-1 pending).
+      // Older spelling the /v1/try/evaluate route still accepts; `country` wins when both are sent.
       wireConfig.user_country = config.country;
     }
     payload.config = wireConfig;
@@ -427,7 +426,7 @@ export class NopeClient<Demo extends boolean = false> {
      * of each message, and accepts at most 20 messages of 10,000 characters.
      *
      * @param options.conversation - The conversation to analyze
-     * @param options.bot_context - Description of the bot or persona (accepted by the API; server-side propagation is being fixed)
+     * @param options.bot_context - Description of the bot or persona, passed into the analysis as conversation metadata
      * @param options.config - `strategy`, `mode`, `include_raw_xml`, `model`
      * @param options.behaviors - Post-analysis filter: `enabled` xor `disabled`, `min_severity`, `categories`
      *
@@ -708,7 +707,7 @@ export class NopeClient<Demo extends boolean = false> {
    * @param options.populations - e.g. ['youth', 'veterans']
    * @param options.subdivisions - e.g. ['GB-NIR']
    * @param options.limit - Server cap 10
-   * @param options.urgent - Only 24/7 urgent resources
+   * @param options.urgent - Ranking hint: 24/7 resources first among ties on relevance and priority tier; nothing is filtered out
    *
    * @example
    * ```typescript

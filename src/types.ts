@@ -155,8 +155,10 @@ export interface Risk {
  */
 export interface CrisisResource {
   /**
-   * Database id. Present on search results; absent from evaluate, basic
-   * and smart results until API fix A-6 deploys.
+   * Database id of the directory row; `signpostById()` accepts it. Every
+   * resource the API serves from its directory carries one (search, basic,
+   * evaluate and smart results). Optional because the built-in fallback set
+   * the API uses when the directory is unavailable has no ids.
    */
   id?: string;
   /** Contact modality (how to reach them). */
@@ -243,15 +245,13 @@ export interface EvaluateConfig {
   /**
    * ISO 3166-1 alpha-2 country for crisis resources (default 'US').
    *
-   * Demo mode: the client also sends this value as `user_country`, which the
-   * /v1/try/evaluate route reads until API fix A-1 deploys.
+   * Demo mode: the client also sends this value as `user_country`, the older
+   * spelling the /v1/try/evaluate route accepts when `country` is absent;
+   * `country` wins when both are present.
    */
   country?: string;
 
-  /**
-   * Include crisis resources in the response. Default true. The demo route
-   * ignores `false` and always returns resources (API fix A-1).
-   */
+  /** Include crisis resources in the response. Default true on both the authenticated and the demo route. */
   include_resources?: boolean;
 
   /** Your conversation id, echoed on webhook payloads. */
@@ -563,7 +563,11 @@ export interface SignpostConfig {
   /** Maximum number of resources (server cap 10). */
   limit?: number;
 
-  /** Only 24/7 urgent resources. */
+  /**
+   * Ranking hint, not a filter: among resources tied on relevance score and
+   * priority tier, place those flagged `is_24_7` first. Every matching
+   * resource is still returned.
+   */
   urgent?: boolean;
 }
 
@@ -1203,8 +1207,7 @@ export interface OversightAnalyzeOptions {
   /**
    * Free-form description of the bot or persona being analyzed, so expected
    * behaviour (a companion persona saying "I love you") is not flagged.
-   * Accepted by the API; server-side propagation into the analysis is being
-   * fixed (API fix A-2).
+   * The API passes it into the analysis as conversation metadata.
    */
   bot_context?: string;
 
@@ -1578,8 +1581,9 @@ export type OcularResponseFor<Demo extends boolean> = Demo extends true ? Ocular
 // Billing (GET /v1/billing/*)
 // =============================================================================
 //
-// Shapes from api/src/routes/v1/billing.ts. All amounts are in mills
-// (1 mill = $0.001). Shapes recaptured after API fix A-5 was deployed.
+// Shapes from api/src/routes/v1/billing.ts, checked against the captured
+// fixtures under tests/fixtures/billing/. All amounts are in mills
+// (1 mill = $0.001).
 
 /** A top-up denomination. */
 export interface BillingTopupOption {
