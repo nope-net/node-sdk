@@ -15,7 +15,7 @@ import type {
   OcularOptions,
   OcularResponse,
   OversightAnalyzeOptions,
-  OversightAnalyzeResponse,
+  OversightAnalyzeResponseFor,
   OversightIngestOptions,
   OversightIngestResponse,
   ResourceByIdResponse,
@@ -41,6 +41,9 @@ const DEFAULT_TIMEOUT = 30000; // milliseconds
 const DEFAULT_MAX_RETRIES = 2;
 /** Server-side cap on /v1/evaluate and /v0/screen (evaluate.ts:111-138). */
 const MAX_EVALUATE_MESSAGES = 100;
+/** Server-side cap on /v1/oversight/ingest (ingest.ts:123). */
+const MAX_INGEST_CONVERSATIONS = 300;
+const OVERSIGHT_SEVERITIES: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'critical']);
 
 /**
  * Validate the messages-or-text input shared by evaluate(), screen() and
@@ -95,7 +98,13 @@ function buildTextInput(
  * console.log(result.speaker_severity);
  * ```
  */
-export class NopeClient {
+/**
+ * Client for the NOPE API.
+ *
+ * `Demo` mirrors the `demo` constructor option so that methods whose demo
+ * response differs (`oversight.analyze`) return the matching type.
+ */
+export class NopeClient<Demo extends boolean = false> {
   private readonly transport: Transport;
   private readonly demo: boolean;
 
@@ -111,7 +120,7 @@ export class NopeClient {
    * @param options.fetch - Fetch implementation (defaults to the global fetch)
    * @param options.sleep - Sleep between retries (defaults to setTimeout)
    */
-  constructor(options: NopeClientOptions = {}) {
+  constructor(options: NopeClientOptions & { demo?: Demo } = {}) {
     this.demo = options.demo ?? false;
     this.transport = new Transport({
       baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
@@ -286,80 +295,77 @@ export class NopeClient {
   }
 
   /**
-   * Oversight API namespace for AI behavior analysis.
+   * Oversight: AI behavior analysis. Detects harmful assistant behaviours
+   * (dependency reinforcement, crisis mishandling, manipulation and 88
+   * others; see {@link OversightBehaviorCode}) that need conversational
+   * context.
    *
-   * Oversight analyzes AI assistant conversations to detect harmful behaviors
-   * that content moderation APIs can't catch because they require conversational context.
-   *
-   * @example
-   * ```typescript
-   * // Single conversation analysis
-   * const result = await client.oversight.analyze({
-   *   conversation: {
-   *     messages: [
-   *       { role: 'user', content: 'I feel so alone' },
-   *       { role: 'assistant', content: 'I understand. I\'m always here for you.' }
-   *     ]
-   *   }
-   * });
-   *
-   * if (result.result.overall_concern === 'high') {
-   *   console.log('Concerning behaviors:', result.result.detected_behaviors);
-   * }
-   * ```
+   * Requires an account with the Oversight feature enabled
+   * (NopeFeatureError otherwise). analyze costs 100 mills ($0.10) per call,
+   * ingest 100 mills per conversation.
    */
   readonly oversight = {
     /**
-     * Analyze a single conversation for harmful AI behaviors.
+     * Analyze one conversation for harmful AI behaviours. Synchronous;
+     * nothing is stored (use `ingest` for dashboard storage).
      *
-     * This endpoint performs synchronous analysis and returns results directly.
-     * Does NOT store results to database - use `ingest` for persistent storage.
+     * Turn numbers in the result count assistant turns from 1. In fast mode
+     * (`config.mode: 'fast'`) `trajectory` is always `stable`,
+     * `turn_analysis` and `human_indicators` are empty, and `summary` and
+     * `pattern_assessment` are absent.
      *
-     * @param options - Analysis options
+     * Demo mode routes to `/v1/try/oversight/analyze` and returns
+     * {@link OversightDemoAnalyzeResponse}. The demo route ignores
+     * `config.strategy` and `config.model`, keeps only `role` and `content`
+     * of each message, and accepts at most 20 messages of 10,000 characters.
+     *
      * @param options.conversation - The conversation to analyze
-     * @param options.config - Configuration options (strategy, model, etc.)
+     * @param options.bot_context - Description of the bot or persona (accepted by the API; server-side propagation is being fixed)
+     * @param options.config - `strategy`, `mode`, `include_raw_xml`, `model`
+     * @param options.behaviors - Post-analysis filter: `enabled` xor `disabled`, `min_severity`, `categories`
      *
-     * @returns Analysis result with detected behaviors, concern level, and trajectory
-     *
-     * @throws {NopeFeatureError} Oversight feature not enabled for this account (403)
-     * @throws {NopeAuthError} Invalid or missing API key (401)
-     * @throws {NopeValidationError} Invalid request payload (400)
-     * @throws {NopeServerError} Server error (5xx)
+     * @throws {NopeFeatureError} Oversight not enabled for this account (403)
+     * @throws {NopeInsufficientBalanceError} Balance cannot cover the call (402)
+     * @throws {NopeValidationError} Invalid request (400)
      *
      * @example
      * ```typescript
-     * const result = await client.oversight.analyze({
+     * const { result } = await client.oversight.analyze({
      *   conversation: {
      *     conversation_id: 'conv_123',
      *     messages: [
-     *       { role: 'user', content: 'I want to end it all' },
-     *       { role: 'assistant', content: 'I understand how you feel...' }
+     *       { role: 'user', content: 'Nobody at work listens to me' },
+     *       { role: 'assistant', content: "I'm always here. I understand you better than they ever will." }
      *     ],
-     *     metadata: { user_is_minor: true }
+     *     metadata: { platform: 'companion-app' }
      *   },
-     *   config: { strategy: 'sliding' }
+     *   config: { mode: 'fast' },
+     *   behaviors: { min_severity: 'medium' }
      * });
-     *
-     * console.log(`Concern: ${result.result.overall_concern}`);
-     * console.log(`Trajectory: ${result.result.trajectory}`);
-     * for (const behavior of result.result.detected_behaviors) {
-     *   console.log(`  ${behavior.code}: ${behavior.severity}`);
+     * for (const behavior of result.detected_behaviors) {
+     *   console.log(`${behavior.code}: ${behavior.severity} - ${behavior.recommendation}`);
      * }
      * ```
      */
-    analyze: async (options: OversightAnalyzeOptions): Promise<OversightAnalyzeResponse> => {
-      const { conversation, config } = options;
+    analyze: async (options: OversightAnalyzeOptions): Promise<OversightAnalyzeResponseFor<Demo>> => {
+      const { conversation, bot_context, config, behaviors } = options;
 
       if (!conversation) {
         throw new Error('"conversation" is required');
       }
-
-      if (!conversation.messages || !Array.isArray(conversation.messages)) {
+      if (!Array.isArray(conversation.messages)) {
         throw new Error('"conversation.messages" must be an array');
       }
-
       if (conversation.messages.length === 0) {
         throw new Error('"conversation.messages" cannot be empty');
+      }
+      if (behaviors) {
+        if (behaviors.enabled?.length && behaviors.disabled?.length) {
+          throw new Error('"behaviors.enabled" and "behaviors.disabled" are mutually exclusive');
+        }
+        if (behaviors.min_severity !== undefined && !OVERSIGHT_SEVERITIES.has(behaviors.min_severity)) {
+          throw new Error('"behaviors.min_severity" must be one of: low, medium, high, critical');
+        }
       }
 
       const payload: Record<string, unknown> = {
@@ -369,99 +375,73 @@ export class NopeClient {
           metadata: conversation.metadata,
         },
       };
-
-      if (config) {
-        payload.config = config;
-      }
+      if (bot_context !== undefined) payload.bot_context = bot_context;
+      if (config !== undefined) payload.config = config;
+      if (behaviors !== undefined) payload.behaviors = behaviors;
 
       const endpoint = this.demo ? '/v1/try/oversight/analyze' : '/v1/oversight/analyze';
-      return this.request<OversightAnalyzeResponse>('POST', endpoint, payload);
+      return this.request<OversightAnalyzeResponseFor<Demo>>('POST', endpoint, payload);
     },
 
     /**
-     * Ingest multiple conversations for batch analysis with database storage.
+     * Analyze and store up to 300 conversations for the dashboard,
+     * cross-session tracking and audit.
      *
-     * Conversations are analyzed and stored in the database for dashboard visualization,
-     * cross-session trajectory tracking, and audit purposes.
+     * Synchronous: the call returns once every conversation is analyzed.
+     * Billing is 100 mills per conversation, deducted before analysis; a
+     * 402 carries `perConversationMills` and `conversations`. Not available
+     * in demo mode.
      *
-     * Note: This endpoint is NOT available in demo mode. Requires API key with
-     * Oversight feature enabled.
+     * @param options.conversations - 1 to 300 conversations, each with a `conversation_id`
+     * @param options.webhook_url - URL to notify on completion (`oversight.ingestion.complete`)
+     * @param options.config - `model`
      *
-     * @param options - Ingest options
-     * @param options.conversations - Array of conversations to analyze (max 100)
-     * @param options.webhook_url - Optional URL to notify when ingestion completes
-     * @param options.config - Configuration options (model)
-     *
-     * @returns Ingestion status with per-conversation results
-     *
-     * @throws {NopeFeatureError} Oversight feature not enabled for this account (403)
-     * @throws {NopeAuthError} Invalid or missing API key (401)
-     * @throws {NopeValidationError} Invalid request payload (400)
-     * @throws {NopeServerError} Server error (5xx)
+     * @throws {NopeFeatureError} Oversight not enabled for this account (403)
+     * @throws {NopeInsufficientBalanceError} Balance cannot cover the batch (402)
+     * @throws {NopeValidationError} Invalid request (400)
      *
      * @example
      * ```typescript
      * const result = await client.oversight.ingest({
      *   conversations: [
-     *     {
-     *       conversation_id: 'conv_001',
-     *       messages: [...],
-     *       metadata: { user_id_hash: 'abc123', platform: 'ios' }
-     *     },
-     *     {
-     *       conversation_id: 'conv_002',
-     *       messages: [...],
-     *     }
+     *     { conversation_id: 'conv_001', messages: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }] },
+     *     { conversation_id: 'conv_002', messages: [{ role: 'user', content: 'hey' }, { role: 'assistant', content: 'hi there' }] }
      *   ],
      *   webhook_url: 'https://api.example.com/webhooks/nope'
      * });
-     *
-     * console.log(`Ingestion ID: ${result.ingestion_id}`);
-     * console.log(`Processed: ${result.conversations_processed}/${result.conversations_received}`);
-     * console.log(`Dashboard: ${result.dashboard_url}`);
+     * console.log(`${result.conversations_processed}/${result.conversations_received} processed`);
      * ```
      */
     ingest: async (options: OversightIngestOptions): Promise<OversightIngestResponse> => {
       if (this.demo) {
-        throw new Error('Oversight ingest is not available in demo mode. Use an API key.');
+        throw new Error('oversight.ingest() is not available in demo mode. Use an API key.');
       }
 
       const { conversations, webhook_url, config } = options;
 
-      if (!conversations || !Array.isArray(conversations)) {
+      if (!Array.isArray(conversations)) {
         throw new Error('"conversations" must be an array');
       }
-
       if (conversations.length === 0) {
         throw new Error('"conversations" array cannot be empty');
       }
-
-      if (conversations.length > 100) {
-        throw new Error(`Too many conversations: ${conversations.length}. Maximum allowed: 100`);
+      if (conversations.length > MAX_INGEST_CONVERSATIONS) {
+        throw new Error(
+          `Too many conversations: ${conversations.length}. Maximum allowed: ${MAX_INGEST_CONVERSATIONS}`
+        );
       }
-
-      // Validate each conversation has conversation_id
-      for (let i = 0; i < conversations.length; i++) {
-        const conv = conversations[i];
+      conversations.forEach((conv, i) => {
         if (!conv.conversation_id) {
           throw new Error(`Conversation at index ${i} must have a "conversation_id"`);
         }
-        if (!conv.messages || conv.messages.length === 0) {
+        if (!Array.isArray(conv.messages) || conv.messages.length === 0) {
           throw new Error(`Conversation "${conv.conversation_id}" must have non-empty "messages"`);
         }
-      }
+      });
 
-      const payload: Record<string, unknown> = {
-        conversations,
-      };
-
-      if (webhook_url) {
-        payload.webhook_url = webhook_url;
-      }
-
-      if (config) {
-        payload.config = config;
-      }
+      const payload: Record<string, unknown> = { conversations };
+      if (webhook_url !== undefined) payload.webhook_url = webhook_url;
+      if (config !== undefined) payload.config = config;
 
       return this.request<OversightIngestResponse>('POST', '/v1/oversight/ingest', payload);
     },

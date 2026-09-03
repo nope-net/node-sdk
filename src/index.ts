@@ -139,17 +139,33 @@ export type {
   AggregatedBehavior,
   TurnAnalysis,
   HumanIndicator,
+  WindowAnalysis,
+  InflectionPoint,
+  OversightBehaviorFilter,
   OversightAnalysisResult,
   OversightAnalysisStrategy,
+  OversightAnalysisMode,
   OversightAnalyzeConfig,
   OversightAnalyzeOptions,
   OversightAnalyzeResponse,
+  OversightDemoAnalyzeResponse,
+  OversightAnalyzeResponseFor,
   OversightIngestConfig,
+  OversightIngestConversation,
   OversightIngestOptions,
   OversightIngestConversationResult,
   OversightIngestError,
   OversightIngestResponse,
+  TruncationWarning,
 } from './types.js';
+
+// Generated Oversight taxonomy (from the API source; see scripts/generate-taxonomy.ts)
+export type { OversightBehaviorCode, OversightBehaviorCategory } from './generated/oversight-taxonomy.js';
+export {
+  OVERSIGHT_BEHAVIOR_CODES,
+  OVERSIGHT_BEHAVIOR_CATEGORIES,
+  OVERSIGHT_BEHAVIOR_CODES_BY_CATEGORY,
+} from './generated/oversight-taxonomy.js';
 
 // Utility functions and constants
 export {
