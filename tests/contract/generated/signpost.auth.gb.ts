@@ -6,6 +6,7 @@ export default {
   "country": "GB",
   "resources": [
     {
+      "id": "bcad260c-f31a-413a-bf89-b717df824680",
       "type": "crisis_line",
       "name": "Samaritans",
       "phone": "116 123",
@@ -52,6 +53,7 @@ export default {
       ]
     },
     {
+      "id": "4e7850db-088b-4978-8e3a-3929ecf17ef2",
       "type": "crisis_line",
       "name": "Lifeline (Northern Ireland)",
       "phone": "0808 808 8000",
@@ -97,6 +99,7 @@ export default {
       ]
     },
     {
+      "id": "065ab1c3-8327-487e-9b3a-74691512a563",
       "type": "crisis_line",
       "name": "Campaign Against Living Miserably (CALM)",
       "phone": "0800 58 58 58",
@@ -110,7 +113,7 @@ export default {
         "is_open": false,
         "next_change": "2026-09-03T16:00:00.000Z",
         "confidence": "high",
-        "message": "Closed · Opens in 15 hours"
+        "message": "Closed · Opens in 10 hours"
       },
       "languages": [
         "en"

@@ -19,17 +19,21 @@ import { listFixtures, moduleNameFor } from '../../scripts/generate-fixture-modu
 import evaluateAuthBenign from './generated/evaluate.auth.benign.js';
 import evaluateTryGb from './generated/evaluate.try.gb.js';
 import evaluateTryUs from './generated/evaluate.try.us.js';
+import evaluateTryGbNoResources from './generated/evaluate.try.gb.no-resources.js';
+import evaluateTryGbText from './generated/evaluate.try.gb.text.js';
 import oversightAuthFast from './generated/oversight.auth.fast.js';
 import oversightTryFast from './generated/oversight.try.fast.js';
 import oversightTryFull from './generated/oversight.try.full.js';
 import ocularAuth from './generated/ocular.auth.js';
 import ocularTry from './generated/ocular.try.js';
+import ocularAuthPerTurn from './generated/ocular.auth.per-turn.js';
 import signpostAuthGb from './generated/signpost.auth.gb.js';
 import signpostTrySmart from './generated/signpost.try.smart.js';
 import signpostSearchAuth from './generated/signpost.search.auth.js';
 import signpostSearchAuthMixedContacts from './generated/signpost.search.auth.mixed-contacts.js';
 import signpostCountries from './generated/signpost.countries.js';
 import signpostDetectMiss from './generated/signpost.detect-country.miss.js';
+import signpostById from './generated/signpost.by-id.js';
 import billingBalance from './generated/billing.balance.js';
 import billingUsage from './generated/billing.usage.js';
 import billingPricing from './generated/billing.pricing.js';
@@ -44,17 +48,21 @@ const GENERATED: Record<string, unknown> = {
   'evaluate/auth.benign.json': evaluateAuthBenign,
   'evaluate/try.gb.json': evaluateTryGb,
   'evaluate/try.us.json': evaluateTryUs,
+  'evaluate/try.gb.no-resources.json': evaluateTryGbNoResources,
+  'evaluate/try.gb.text.json': evaluateTryGbText,
   'oversight/auth.fast.json': oversightAuthFast,
   'oversight/try.fast.json': oversightTryFast,
   'oversight/try.full.json': oversightTryFull,
   'ocular/auth.json': ocularAuth,
   'ocular/try.json': ocularTry,
+  'ocular/auth.per-turn.json': ocularAuthPerTurn,
   'signpost/auth.gb.json': signpostAuthGb,
   'signpost/try.smart.json': signpostTrySmart,
   'signpost/search.auth.json': signpostSearchAuth,
   'signpost/search.auth.mixed-contacts.json': signpostSearchAuthMixedContacts,
   'signpost/countries.json': signpostCountries,
   'signpost/detect-country.miss.json': signpostDetectMiss,
+  'signpost/by-id.json': signpostById,
   'billing/balance.json': billingBalance,
   'billing/usage.json': billingUsage,
   'billing/pricing.json': billingPricing,
@@ -272,6 +280,12 @@ function checkOcular(body: Obj, demo: boolean): void {
   }
 }
 
+function checkSignpostById(body: Obj): void {
+  const r = body.resource as Obj;
+  checkCrisisResource(r);
+  expect(typeof r.id).toBe('string');
+}
+
 function checkSignpostBasic(body: Obj): void {
   expectKeys(body, ['country', 'resources', 'count']);
   expect(body.count).toBe(asArr(body.resources).length);
@@ -353,17 +367,21 @@ const CHECKS: Record<string, (body: Obj) => void> = {
   'evaluate/auth.benign.json': checkEvaluate,
   'evaluate/try.gb.json': checkEvaluate,
   'evaluate/try.us.json': checkEvaluate,
+  'evaluate/try.gb.no-resources.json': checkEvaluate,
+  'evaluate/try.gb.text.json': checkEvaluate,
   'oversight/auth.fast.json': checkOversightAuth,
   'oversight/try.fast.json': checkOversightDemo,
   'oversight/try.full.json': checkOversightDemo,
   'ocular/auth.json': (b) => checkOcular(b, false),
   'ocular/try.json': (b) => checkOcular(b, true),
+  'ocular/auth.per-turn.json': (b) => checkOcular(b, false),
   'signpost/auth.gb.json': checkSignpostBasic,
   'signpost/try.smart.json': checkSignpostSmart,
   'signpost/search.auth.json': checkSignpostSearch,
   'signpost/search.auth.mixed-contacts.json': checkSignpostSearch,
   'signpost/countries.json': checkCountries,
   'signpost/detect-country.miss.json': checkDetectCountry,
+  'signpost/by-id.json': checkSignpostById,
   'billing/balance.json': checkBillingBalance,
   'billing/usage.json': checkBillingUsage,
   'billing/pricing.json': checkBillingPricing,

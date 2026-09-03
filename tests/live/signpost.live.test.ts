@@ -88,7 +88,7 @@ describe.sequential('signpost (live)', () => {
     expect(err).toBeInstanceOf(NopeNotFoundError);
   });
 
-  it.skip('row 21 (behaviour): signpostById result carries id (pending API deploy of A-6)', async () => {
+  it('row 21 (behaviour): signpostById result carries id', async () => {
     const client = publicClient();
     const found = await client.signpostById(searchHitId!);
     expect(found.resource.id).toBe(searchHitId);

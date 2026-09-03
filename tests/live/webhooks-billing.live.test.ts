@@ -79,7 +79,7 @@ describe.sequential('webhooks and billing (live)', () => {
     expect(typeof pricing.pricing.evaluate.cost_display).toBe('string');
   });
 
-  it.skip('row 27b (behaviour): balance.estimated_screens, topup_options[].screens and the full pricing table are numbers (pending API deploy of A-5)', async () => {
+  it('row 27b (behaviour): balance.estimated_screens, topup_options[].screens and the full pricing table are numbers', async () => {
     const client = authClient();
     const balance = await client.billing.balance();
     expect(typeof balance.estimated_screens).toBe('number');

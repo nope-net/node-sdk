@@ -51,11 +51,16 @@ describe.sequential('evaluate (live)', () => {
     expect(client.lastResponseMeta?.rateLimit?.limit).toBeLessThanOrEqual(10);
   });
 
-  it.skip('row 3 (behaviour): demo config.country reaches the resources (pending API deploy of A-1)', async () => {
+  it('row 3 (behaviour): demo config.country reaches the resources and include_resources is honoured', async () => {
     countDemo();
     const client = demoClient();
-    const result = await client.evaluate({ messages: CONCERNING_MESSAGES, config: { country: 'GB', include_resources: false } });
-    expect(result.resources?.primary.country_codes).toContain('GB');
+    const withResources = await client.evaluate({ messages: CONCERNING_MESSAGES, config: { country: 'GB' } });
+    expect(withResources.resources?.primary.country_codes).toContain('GB');
+
+    countDemo();
+    const without = await client.evaluate({ messages: CONCERNING_MESSAGES, config: { country: 'GB', include_resources: false } });
+    expect(without.show_resources).toBe(false);
+    expect(without.resources).toBeUndefined();
   });
 
   it('row 4: bad key -> NopeAuthError 401', async () => {

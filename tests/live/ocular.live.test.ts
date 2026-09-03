@@ -46,7 +46,7 @@ describe.sequential('ocular (live)', () => {
     for (const phase of result.trajectory_shape?.phases ?? []) expect(PHASES).toContain(phase);
   });
 
-  it.skip('row 9 (behaviour): trajectory[].role is user | assistant (pending API deploy of A-4)', async () => {
+  it('row 9 (behaviour): trajectory[].role is user | assistant', async () => {
     const client = authClient();
     const result = await client.ocular({ messages: CONCERNING_MESSAGES, per_turn: true });
     for (const entry of result.trajectory ?? []) expect(['user', 'assistant']).toContain(entry.role);

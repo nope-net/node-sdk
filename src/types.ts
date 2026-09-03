@@ -1560,9 +1560,7 @@ export type OcularResponseFor<Demo extends boolean> = Demo extends true ? Ocular
 // =============================================================================
 //
 // Shapes from api/src/routes/v1/billing.ts. All amounts are in mills
-// (1 mill = $0.001). The estimated_screens, topup_options[].screens and
-// pricing.screen.cost_mills fields, and the ocular / signpost_smart /
-// oversight_* / v0_evaluate pricing rows, arrive with API fix A-5.
+// (1 mill = $0.001). Shapes recaptured after API fix A-5 was deployed.
 
 /** A top-up denomination. */
 export interface BillingTopupOption {
@@ -1570,8 +1568,8 @@ export interface BillingTopupOption {
   amount_mills: number;
   /** e.g. '$10'. */
   label: string;
-  /** Screens this amount buys. Absent until API fix A-5 is deployed. */
-  screens?: number;
+  /** Screens this amount buys. */
+  screens: number;
   /** Evaluate calls this amount buys. */
   evaluates: number;
   /** Smart signpost calls this amount buys. */
@@ -1593,8 +1591,8 @@ export interface BillingBalanceResponse {
   balance_mills: number;
   /** e.g. '$12.35'. */
   balance_formatted: string;
-  /** Screens the balance covers. Absent until API fix A-5 is deployed. */
-  estimated_screens?: number;
+  /** Screens the balance covers. */
+  estimated_screens: number;
   /** Evaluate calls the balance covers. */
   estimated_evaluates: number;
   /** Smart signpost calls the balance covers. */
@@ -1662,8 +1660,7 @@ export interface BillingUsageHistoryResponse {
 
 /** One priced endpoint. */
 export interface BillingPricingEntry {
-  /** Absent on the `screen` alias until API fix A-5 is deployed. */
-  cost_mills?: number;
+  cost_mills: number;
   /** e.g. '$0.003' or 'Free'. */
   cost_display: string;
   description?: string;
@@ -1672,18 +1669,16 @@ export interface BillingPricingEntry {
 /** Pricing by endpoint key. Unknown keys are tolerated. */
 export interface BillingPricingTable {
   evaluate: BillingPricingEntry;
+  ocular: BillingPricingEntry;
+  signpost_smart: BillingPricingEntry;
   resources_smart: BillingPricingEntry;
+  oversight_analyze: BillingPricingEntry;
+  /** Billed per conversation. */
+  oversight_ingest: BillingPricingEntry;
+  v0_screen: BillingPricingEntry;
   /** Alias of v0_screen. */
   screen: BillingPricingEntry;
-  /** The keys below arrive with API fix A-5. */
-  ocular?: BillingPricingEntry;
-  signpost_smart?: BillingPricingEntry;
-  oversight_analyze?: BillingPricingEntry;
-  oversight_ingest?: BillingPricingEntry;
-  v0_screen?: BillingPricingEntry;
-  v0_evaluate?: BillingPricingEntry;
-  /** Present until A-5 deploys; free, so it is dropped from the priced table afterwards. */
-  resources?: BillingPricingEntry;
+  v0_evaluate: BillingPricingEntry;
   [endpoint: string]: BillingPricingEntry | undefined;
 }
 

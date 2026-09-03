@@ -44,6 +44,8 @@ const BINDINGS: Record<string, FixtureBinding> = {
   'evaluate/auth.benign.json': { type: 'EvaluateResponse' },
   'evaluate/try.gb.json': { type: 'EvaluateResponse' },
   'evaluate/try.us.json': { type: 'EvaluateResponse' },
+  'evaluate/try.gb.no-resources.json': { type: 'EvaluateResponse' },
+  'evaluate/try.gb.text.json': { type: 'EvaluateResponse' },
 
   'oversight/auth.fast.json': { type: 'OversightAnalyzeResponse' },
   'oversight/try.fast.json': { type: 'OversightDemoAnalyzeResponse' },
@@ -51,6 +53,7 @@ const BINDINGS: Record<string, FixtureBinding> = {
 
   'ocular/auth.json': { type: 'OcularResponse' },
   'ocular/try.json': { type: 'OcularDemoResponse' },
+  'ocular/auth.per-turn.json': { type: 'OcularResponse' },
 
   'signpost/auth.gb.json': { type: 'SignpostResponse' },
   'signpost/try.smart.json': { type: 'SignpostSmartResponse' },
@@ -58,6 +61,7 @@ const BINDINGS: Record<string, FixtureBinding> = {
   'signpost/search.auth.mixed-contacts.json': { type: 'SignpostSearchResponse' },
   'signpost/countries.json': { type: 'SignpostCountriesResponse' },
   'signpost/detect-country.miss.json': { type: 'DetectCountryResponse' },
+  'signpost/by-id.json': { type: 'SignpostByIdResponse' },
 
   // Captured 2026-09-03 before API fix A-5 (billing.ts:152-175,308-349); the
   // fields that fix adds are typed optional until it deploys, so these check
