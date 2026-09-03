@@ -169,6 +169,21 @@ export type {
   OversightIngestError,
   OversightIngestResponse,
   TruncationWarning,
+  // Billing types
+  BillingBalanceResponse,
+  BillingTopupOption,
+  BillingTopupRecord,
+  BillingUsageOptions,
+  BillingUsageBreakdown,
+  BillingUsageResponse,
+  BillingUsageHistoryOptions,
+  BillingUsageRecord,
+  BillingUsageHistoryResponse,
+  BillingPricingEntry,
+  BillingPricingTable,
+  BillingPricingResponse,
+  BillingTopupOptions,
+  BillingTopupResponse,
 } from './types.js';
 
 // Generated Signpost vocabularies (from the API source; see scripts/generate-taxonomy.ts)
@@ -217,4 +232,16 @@ export type {
   WebhookBody,
   WebhookHeaders,
   VerifiedWebhook,
+  // Webhook management types
+  WebhookCreateOptions,
+  WebhookUpdateOptions,
+  WebhookResponse,
+  WebhookListResponse,
+  WebhookDeleteResponse,
+  WebhookSecretResponse,
+  WebhookDeliveryResult,
+  WebhookDeliveryStatus,
+  WebhookEvent,
+  WebhookEventsOptions,
+  WebhookEventsResponse,
 } from './webhook.js';

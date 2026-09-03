@@ -7,6 +7,14 @@
 import { warnOnce } from './deprecation.js';
 import { Transport, type ResponseMeta } from './http.js';
 import type {
+  BillingBalanceResponse,
+  BillingPricingResponse,
+  BillingTopupOptions,
+  BillingTopupResponse,
+  BillingUsageHistoryOptions,
+  BillingUsageHistoryResponse,
+  BillingUsageOptions,
+  BillingUsageResponse,
   DetectCountryOptions,
   DetectCountryResponse,
   DetectCountryResult,
@@ -39,6 +47,17 @@ import type {
   SignpostSmartOptions,
   SignpostSmartResponse,
 } from './types.js';
+import type {
+  WebhookCreateOptions,
+  WebhookDeleteResponse,
+  WebhookDeliveryResult,
+  WebhookEventsOptions,
+  WebhookEventsResponse,
+  WebhookListResponse,
+  WebhookResponse,
+  WebhookSecretResponse,
+  WebhookUpdateOptions,
+} from './webhook.js';
 
 const DEFAULT_BASE_URL = 'https://api.nope.net';
 const DEFAULT_TIMEOUT = 30000; // milliseconds
@@ -513,6 +532,139 @@ export class NopeClient<Demo extends boolean = false> {
       if (config !== undefined) payload.config = config;
 
       return this.request<OversightIngestResponse>('POST', '/v1/oversight/ingest', payload);
+    },
+  };
+
+  // ===========================================================================
+  // Webhook management (/v1/webhooks; API key required, paid plan to create)
+  // ===========================================================================
+
+  /**
+   * Manage webhook endpoints. Deliveries are verified with {@link Webhook}.
+   * Not available in demo mode. The family is rate limited at 30/min.
+   */
+  readonly webhooks = {
+    /**
+     * Register an endpoint. The response carries the signing `secret` once;
+     * store it. Requires a paid plan (NopeFeatureError with `upgradeUrl`
+     * otherwise). URLs must be HTTPS (http only for localhost) and public.
+     */
+    create: async (options: WebhookCreateOptions): Promise<WebhookResponse> => {
+      this.requireNotDemo('webhooks.create()');
+      return this.transport.request<WebhookResponse>('POST', '/v1/webhooks', { body: options });
+    },
+
+    /** List the account's webhooks (without secrets). */
+    list: async (): Promise<WebhookListResponse> => {
+      this.requireNotDemo('webhooks.list()');
+      return this.transport.request<WebhookListResponse>('GET', '/v1/webhooks');
+    },
+
+    /** One webhook by id (NopeNotFoundError when unknown). */
+    get: async (id: string): Promise<WebhookResponse> => {
+      this.requireNotDemo('webhooks.get()');
+      return this.transport.request<WebhookResponse>('GET', `/v1/webhooks/${encodeURIComponent(id)}`);
+    },
+
+    /** Update url, min_risk_level, enabled or include_conversation. */
+    update: async (id: string, patch: WebhookUpdateOptions): Promise<WebhookResponse> => {
+      this.requireNotDemo('webhooks.update()');
+      return this.transport.request<WebhookResponse>('PUT', `/v1/webhooks/${encodeURIComponent(id)}`, { body: patch });
+    },
+
+    /** Delete a webhook. */
+    delete: async (id: string): Promise<WebhookDeleteResponse> => {
+      this.requireNotDemo('webhooks.delete()');
+      return this.transport.request<WebhookDeleteResponse>('DELETE', `/v1/webhooks/${encodeURIComponent(id)}`);
+    },
+
+    /** Rotate the signing secret. The old secret stops working immediately. */
+    regenerateSecret: async (id: string): Promise<WebhookSecretResponse> => {
+      this.requireNotDemo('webhooks.regenerateSecret()');
+      return this.transport.request<WebhookSecretResponse>(
+        'POST',
+        `/v1/webhooks/${encodeURIComponent(id)}/regenerate-secret`
+      );
+    },
+
+    /**
+     * Send a `test.ping` to the endpoint and return the delivery result.
+     * A failed delivery comes back as `{success: false, ...}` (the API
+     * answers 502 with the same body), so callers branch on `success`
+     * rather than catching.
+     */
+    test: async (id: string): Promise<WebhookDeliveryResult> => {
+      this.requireNotDemo('webhooks.test()');
+      const result = await this.transport.requestRaw<WebhookDeliveryResult>(
+        'POST',
+        `/v1/webhooks/${encodeURIComponent(id)}/test`,
+        { acceptStatuses: [502] }
+      );
+      return result.body;
+    },
+
+    /**
+     * Recent deliveries for one webhook, or for the whole account when `id`
+     * is omitted. `limit` defaults to 50 (max 100).
+     */
+    events: async (id?: string, options: WebhookEventsOptions = {}): Promise<WebhookEventsResponse> => {
+      this.requireNotDemo('webhooks.events()');
+      const path = id ? `/v1/webhooks/${encodeURIComponent(id)}/events` : '/v1/webhooks/events';
+      return this.transport.request<WebhookEventsResponse>('GET', path, { query: { limit: options.limit } });
+    },
+  };
+
+  // ===========================================================================
+  // Billing (/v1/billing; API key required except pricing)
+  // ===========================================================================
+
+  /**
+   * Balance, usage and pricing. Amounts are in mills (1 mill = $0.001).
+   * Not available in demo mode; `pricing()` needs no key on a normal client.
+   */
+  readonly billing = {
+    /** Current balance, estimates, top-up history and options. */
+    balance: async (): Promise<BillingBalanceResponse> => {
+      this.requireNotDemo('billing.balance()');
+      return this.transport.request<BillingBalanceResponse>('GET', '/v1/billing/balance');
+    },
+
+    /** Spend by endpoint for a period (default: the current month). */
+    usage: async (options: BillingUsageOptions = {}): Promise<BillingUsageResponse> => {
+      this.requireNotDemo('billing.usage()');
+      return this.transport.request<BillingUsageResponse>('GET', '/v1/billing/usage', {
+        query: { start_date: options.start_date, end_date: options.end_date },
+      });
+    },
+
+    /** Individual billed calls, paginated. */
+    usageHistory: async (options: BillingUsageHistoryOptions = {}): Promise<BillingUsageHistoryResponse> => {
+      this.requireNotDemo('billing.usageHistory()');
+      return this.transport.request<BillingUsageHistoryResponse>('GET', '/v1/billing/usage/history', {
+        query: {
+          limit: options.limit,
+          offset: options.offset,
+          endpoint: options.endpoint,
+          start_date: options.start_date,
+          end_date: options.end_date,
+        },
+      });
+    },
+
+    /** Public price list (no key needed). */
+    pricing: async (): Promise<BillingPricingResponse> => {
+      this.requireNotDemo('billing.pricing()');
+      return this.transport.request<BillingPricingResponse>('GET', '/v1/billing/pricing');
+    },
+
+    /**
+     * Create a Stripe Checkout session for a top-up and return its URL.
+     * `amount_mills` must be one of the `topup_options` amounts
+     * (NopeValidationError with `details.valid_options` otherwise).
+     */
+    topup: async (options: BillingTopupOptions): Promise<BillingTopupResponse> => {
+      this.requireNotDemo('billing.topup()');
+      return this.transport.request<BillingTopupResponse>('POST', '/v1/billing/topup', { body: options });
     },
   };
 

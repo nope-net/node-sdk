@@ -1536,3 +1536,159 @@ export interface OcularDemoResponse extends OcularResponse {
 
 /** Response type of ocular() for a client constructed with the given `demo` flag. */
 export type OcularResponseFor<Demo extends boolean> = Demo extends true ? OcularDemoResponse : OcularResponse;
+// =============================================================================
+// Billing (GET /v1/billing/*)
+// =============================================================================
+//
+// Shapes from api/src/routes/v1/billing.ts. All amounts are in mills
+// (1 mill = $0.001). The estimated_screens, topup_options[].screens and
+// pricing.screen.cost_mills fields, and the ocular / signpost_smart /
+// oversight_* / v0_evaluate pricing rows, arrive with API fix A-5.
+
+/** A top-up denomination. */
+export interface BillingTopupOption {
+  id: string;
+  amount_mills: number;
+  /** e.g. '$10'. */
+  label: string;
+  /** Screens this amount buys (API fix A-5). */
+  screens: number;
+  /** Evaluate calls this amount buys. */
+  evaluates: number;
+  /** Smart signpost calls this amount buys. */
+  resources_smart: number;
+}
+
+/** A past top-up. */
+export interface BillingTopupRecord {
+  id: string;
+  amount_mills: number;
+  amount_formatted: string;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
+/** Response from GET /v1/billing/balance. */
+export interface BillingBalanceResponse {
+  balance_mills: number;
+  /** e.g. '$12.35'. */
+  balance_formatted: string;
+  /** Screens the balance covers (API fix A-5). */
+  estimated_screens: number;
+  /** Evaluate calls the balance covers. */
+  estimated_evaluates: number;
+  /** Smart signpost calls the balance covers. */
+  estimated_resources_smart: number;
+  low_balance: boolean;
+  topup_history: BillingTopupRecord[];
+  topup_options: BillingTopupOption[];
+}
+
+/** Options for billing.usage(). Dates are ISO 8601; default is the current month. */
+export interface BillingUsageOptions {
+  start_date?: string;
+  end_date?: string;
+}
+
+/** Per-endpoint usage line. */
+export interface BillingUsageBreakdown {
+  /** Endpoint key (e.g. 'evaluate', 'oversight_analyze', 'v0_screen'). */
+  endpoint: string;
+  calls: number;
+  cost_mills: number;
+  cost_formatted: string;
+  /** Calls that triggered a referral. */
+  referrals: number;
+}
+
+/** Response from GET /v1/billing/usage. */
+export interface BillingUsageResponse {
+  period_start: string;
+  /** null when no end_date was given. */
+  period_end: string | null;
+  total_spend_mills: number;
+  total_spend_formatted: string;
+  breakdown: BillingUsageBreakdown[];
+}
+
+/** Options for billing.usageHistory(). */
+export interface BillingUsageHistoryOptions {
+  /** Page size (default 50, max 100). */
+  limit?: number;
+  offset?: number;
+  /** Filter to one endpoint path. */
+  endpoint?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+/** One billed call. */
+export interface BillingUsageRecord {
+  id: string;
+  endpoint: string;
+  cost_mills: number;
+  cost_formatted: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/** Response from GET /v1/billing/usage/history. */
+export interface BillingUsageHistoryResponse {
+  records: BillingUsageRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** One priced endpoint. */
+export interface BillingPricingEntry {
+  cost_mills: number;
+  /** e.g. '$0.003' or 'Free'. */
+  cost_display: string;
+  description?: string;
+}
+
+/** Pricing by endpoint key. Unknown keys are tolerated. */
+export interface BillingPricingTable {
+  evaluate: BillingPricingEntry;
+  ocular: BillingPricingEntry;
+  signpost_smart: BillingPricingEntry;
+  resources_smart: BillingPricingEntry;
+  oversight_analyze: BillingPricingEntry;
+  oversight_ingest: BillingPricingEntry;
+  v0_screen: BillingPricingEntry;
+  /** Alias of v0_screen. */
+  screen: BillingPricingEntry;
+  v0_evaluate: BillingPricingEntry;
+  resources: BillingPricingEntry;
+  [endpoint: string]: BillingPricingEntry | undefined;
+}
+
+/** Response from GET /v1/billing/pricing (public, no key). */
+export interface BillingPricingResponse {
+  /** 'mills'. */
+  unit: string;
+  unit_description: string;
+  pricing: BillingPricingTable;
+  topup_options: BillingTopupOption[];
+  free_credit_mills: number;
+  free_credit_display: string;
+}
+
+/** Options for billing.topup(). */
+export interface BillingTopupOptions {
+  /** One of the topup_options amounts (10000, 25000, 50000, 100000). */
+  amount_mills: number;
+  /** Where Stripe sends the user after payment (default: the dashboard). */
+  success_url?: string;
+  /** Where Stripe sends the user on cancel (default: the dashboard). */
+  cancel_url?: string;
+}
+
+/** Response from POST /v1/billing/topup. */
+export interface BillingTopupResponse {
+  /** Stripe Checkout URL to redirect the user to. */
+  checkout_url: string;
+}
+

@@ -374,3 +374,92 @@ export const Webhook = {
     };
   },
 };
+
+// =============================================================================
+// Management types (client.webhooks.*; api/src/routes/v1/webhooks.ts)
+// =============================================================================
+
+/** Body of client.webhooks.create(). */
+export interface WebhookCreateOptions {
+  /** HTTPS endpoint (http is accepted for localhost only; private ranges are rejected). */
+  url: string;
+  /** Minimum risk level that triggers a delivery (default 'high'). */
+  min_risk_level?: WebhookRiskLevel;
+  /** Include the latest user message in payloads (default false). */
+  include_conversation?: boolean;
+}
+
+/** Body of client.webhooks.update(). */
+export interface WebhookUpdateOptions {
+  url?: string;
+  min_risk_level?: WebhookRiskLevel;
+  enabled?: boolean;
+  include_conversation?: boolean;
+}
+
+/** A webhook configuration. `secret` is present only on create and regenerateSecret. */
+export interface WebhookResponse {
+  id: string;
+  url: string;
+  min_risk_level: WebhookRiskLevel;
+  enabled: boolean;
+  include_conversation: boolean;
+  created_at: string;
+  updated_at: string;
+  /** Signing secret (`whsec_...`). Returned once, on create. */
+  secret?: string;
+}
+
+/** Response from client.webhooks.list(). */
+export interface WebhookListResponse {
+  webhooks: WebhookResponse[];
+}
+
+/** Response from client.webhooks.delete(). */
+export interface WebhookDeleteResponse {
+  success: true;
+}
+
+/** Response from client.webhooks.regenerateSecret(). */
+export interface WebhookSecretResponse {
+  /** The new signing secret. The old one stops working immediately. */
+  secret: string;
+}
+
+/** Result of a delivery attempt (client.webhooks.test()). */
+export interface WebhookDeliveryResult {
+  success: boolean;
+  http_status?: number;
+  error_message?: string;
+  duration_ms: number;
+}
+
+/** Delivery status of a stored event. */
+export type WebhookDeliveryStatus = 'pending' | 'sent' | 'failed';
+
+/** A stored delivery (client.webhooks.events()). */
+export interface WebhookEvent {
+  id: string;
+  webhook_id: string;
+  event_type: WebhookEventType;
+  payload: WebhookPayload;
+  status: WebhookDeliveryStatus;
+  http_status?: number;
+  error_message?: string;
+  /** Attempts so far (the API retries 4 times: immediately, 1 min, 10 min, 1 h). */
+  attempt_count: number;
+  last_attempt_at?: string;
+  next_retry_at?: string;
+  created_at: string;
+}
+
+/** Options for client.webhooks.events(). */
+export interface WebhookEventsOptions {
+  /** Max events (default 50, max 100). */
+  limit?: number;
+}
+
+/** Response from client.webhooks.events(). */
+export interface WebhookEventsResponse {
+  events: WebhookEvent[];
+}
