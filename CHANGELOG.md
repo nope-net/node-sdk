@@ -9,9 +9,9 @@ follows [Semantic Versioning](https://semver.org/).
 The types now model the live wire of api.nope.net (captured fixtures under
 `tests/fixtures/` are checked against every response type on each run), and
 the client covers the webhook-management and billing routes. Several
-inherited fields that no route ever returned are gone. 3.0.0 was tagged in
-the repository and never published; its one change (removal of `steer()`) is
-listed here.
+inherited fields that no route ever returned are gone. 3.0.0 was committed
+in the repository and never tagged or published; its one change (removal of
+`steer()`) is listed here.
 
 ### Breaking changes
 
