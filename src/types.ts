@@ -1371,12 +1371,20 @@ export interface OcularOptions {
   thoroughness?: OcularThoroughness;
 
   /**
-   * Score every turn and return `trajectory` and `trajectory_shape`. Off by
-   * default; without it the response carries no trajectory.
+   * Score the conversation turn by turn and return `trajectory` (one entry
+   * per scored turn; `turn` is the 0-based position in `messages`) and
+   * `trajectory_shape`. Off by default; without it the response carries
+   * neither field. Which turns are scored depends on `trajectory_stride`.
+   * The demo route returns `trajectory` but never `trajectory_shape`.
    */
   per_turn?: boolean;
 
-  /** With per_turn: score every Nth turn backward from the last (1..64; server default 3). */
+  /**
+   * With per_turn: score every Nth turn, counted backward from the last
+   * turn so the final turn is always scored (1..64). The server default is
+   * 3, so a 5-message conversation yields turns 4 and 1. Pass 1 to score
+   * every turn.
+   */
   trajectory_stride?: number;
 
   /** Opaque end-user id (1..256 chars) for dashboard analytics. Never forwarded to the model. */
@@ -1423,10 +1431,14 @@ export interface OcularStability {
 
 /** Per-turn trajectory entry (only with `per_turn: true`). */
 export interface OcularTrajectoryEntry {
-  /** Turn index. */
+  /** 0-based position of the turn in `messages` (for `text` input, of the parsed speaker turn). */
   turn: number;
 
-  /** Speaker of the turn. The customer route passes the upstream value through (API fix A-4 normalises it to user|assistant). */
+  /**
+   * Speaker of the turn: `user` or `assistant` (the gateway maps the
+   * upstream `ai` label to `assistant`). Declared as string because any
+   * other upstream label passes through unchanged.
+   */
   role: string;
 
   /** Per-turn salience, same cascade as the top-level field. */
@@ -1442,23 +1454,29 @@ export interface OcularTrajectoryEntry {
 
 /**
  * Arc summary of a per-turn trajectory (only with `per_turn: true`). The
- * phase, slope and peak fields track the suicide (crisis) axis; `onsets`
- * spans every axis. Every key is optional; the object is absent when empty.
+ * phase, slope and peak fields track the suicide (crisis) axis and index
+ * the `trajectory` array (entry i, not message i); `onsets` spans every
+ * axis and uses `turn` values. The authenticated route returns it whenever
+ * at least one turn was scored; the demo route never returns it. Every key
+ * is optional.
  */
 export interface OcularTrajectoryShape {
-  /** axis -> first turn index at which that axis crossed its onset threshold. */
+  /** axis -> the `turn` value (0-based message position) at which that axis first crossed its onset threshold. */
   onsets?: Record<string, number>;
 
-  /** Per-turn phase labels. */
+  /** Phase label per `trajectory` entry: `phases[i]` describes `trajectory[i]`. */
   phases?: OcularPhase[];
 
-  /** Per-turn crisis-axis slope (delta versus the previous turn). */
+  /** Crisis-axis slope per `trajectory` entry: the delta versus the previous scored turn; the first is 0. */
   slopes?: number[];
 
-  /** Turn index with the highest crisis-axis signal. */
+  /**
+   * Position in the `trajectory` array of the entry with the highest
+   * crisis-axis score; `trajectory[peak_turn].turn` is the message index.
+   */
   peak_turn?: number;
 
-  /** Highest crisis-axis signal across the conversation. */
+  /** Highest crisis-axis score across the scored turns. */
   peak_crisis?: number;
 }
 
@@ -1521,10 +1539,10 @@ export interface OcularResponse {
   /** Response metadata. */
   meta: OcularMeta;
 
-  /** Per-turn trail (only with `per_turn: true`). */
+  /** Per-turn trail (only with `per_turn: true`): one entry per scored turn, every `trajectory_stride`-th turn back from the last. */
   trajectory?: OcularTrajectoryEntry[];
 
-  /** Arc summary of the trail (only with `per_turn: true`). */
+  /** Arc summary of the trail (only with `per_turn: true`; never on the demo route). */
   trajectory_shape?: OcularTrajectoryShape;
 }
 
@@ -1542,7 +1560,8 @@ export interface OcularDemoTrajectoryEntry extends OcularTrajectoryEntry {
 /**
  * Response from POST /v1/try/ocular (demo mode). The customer fields plus
  * screening `heads` and per-head `detail.scores` / `detail.calibrated`,
- * keyed by public family names such as `USER_SUICIDE_HEAD_A`.
+ * keyed by public family names such as `USER_SUICIDE_HEAD_A`. The demo
+ * route returns `trajectory` with `per_turn` but never `trajectory_shape`.
  */
 export interface OcularDemoResponse extends OcularResponse {
   heads: OcularHead[];

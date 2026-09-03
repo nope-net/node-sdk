@@ -266,18 +266,23 @@ export class NopeClient<Demo extends boolean = false> {
    * Pick the `salience` cutoff that fits your action; the reference
    * thresholds are T_WATCH = 0.30 and T_DANGER = 0.60. Set `per_turn: true`
    * to receive `trajectory` (per-turn salience and axis scores) and
-   * `trajectory_shape`; without it neither field is present.
+   * `trajectory_shape`; without it neither field is present. The server
+   * scores every third turn back from the last unless `trajectory_stride`
+   * says otherwise; `turn` values are 0-based positions in `messages`, and
+   * `trajectory_shape.peak_turn`, `phases` and `slopes` index the
+   * `trajectory` array while `onsets` uses `turn` values.
    * `meta.windowed` and `meta.windows` are always present.
    *
    * Demo mode routes to `/v1/try/ocular` (at most 12 messages or 4,000
    * characters) and returns {@link OcularDemoResponse}, which adds `heads`
-   * and `detail` keyed by public family names.
+   * and `detail` keyed by public family names; it returns `trajectory` with
+   * `per_turn` but never `trajectory_shape`.
    *
    * @param options.messages - Conversation messages (roles user|assistant)
    * @param options.text - Plain text input
    * @param options.thoroughness - 'fast' | 'auto' | 'thorough'
-   * @param options.per_turn - Score every turn and return the trajectory
-   * @param options.trajectory_stride - With per_turn: stride 1..64
+   * @param options.per_turn - Score the conversation turn by turn (subject to `trajectory_stride`) and return `trajectory` and `trajectory_shape`
+   * @param options.trajectory_stride - With per_turn: score every Nth turn back from the last (1..64; server default 3). Pass 1 to score every turn
    * @param options.user_id - Opaque id for dashboard analytics (never forwarded to the model)
    * @param options.session_id - Opaque id for dashboard analytics
    * @param options.agent_id - Opaque id for dashboard analytics

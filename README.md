@@ -77,7 +77,7 @@ per-IP rate-limited `/v1/try/*` endpoints:
 |---|---|---|
 | `evaluate` | `/v1/try/evaluate` | Keeps the last 10 messages, always returns resources, adds `metadata.try_endpoint` and `metadata.model`. Until API fix A-1 deploys the route reads `config.user_country`, which the client sends alongside `config.country`. 10 calls per minute per IP. |
 | `oversight.analyze` | `/v1/try/oversight/analyze` | Returns `{ mode, result, try_endpoint }` (`OversightDemoAnalyzeResponse`). Ignores `config.strategy` and `config.model`, keeps only `role` and `content`, accepts at most 20 messages. |
-| `ocular` | `/v1/try/ocular` | Returns `OcularDemoResponse`, which adds `heads` and `detail` under public family names. At most 12 messages or 4,000 characters. |
+| `ocular` | `/v1/try/ocular` | Returns `OcularDemoResponse`, which adds `heads` and `detail` under public family names. At most 12 messages or 4,000 characters. With `per_turn` it returns `trajectory` but never `trajectory_shape`. |
 | `signpostSmart` | `/v1/try/signpost/smart` | Adds `try_endpoint: true`. |
 
 Every other method throws `... is not available in demo mode` before any
@@ -138,8 +138,7 @@ refused in demo mode. `ScreenConfig` is `{ country?, debug?, include_recommended
 `salience` score in [0, 1] plus eight user-risk axes under `signals.user`
 and four AI-behaviour axes under `signals.ai`, each `{ level, score }`. Pick
 the `salience` cutoff that fits your action; the reference thresholds are
-0.30 (watch) and 0.60 (danger). Set `per_turn: true` to receive
-`trajectory` (per-turn salience and axis scores) and `trajectory_shape`.
+0.30 (watch) and 0.60 (danger).
 
 ```typescript
 import { NopeClient } from '@nope-net/sdk';
@@ -150,8 +149,10 @@ const result = await client.ocular({
   messages: [
     { role: 'user', content: 'I feel hopeless' },
     { role: 'assistant', content: 'I am here with you.' },
+    { role: 'user', content: 'Nothing helps any more.' },
   ],
   per_turn: true,
+  trajectory_stride: 1, // score every turn; the server default of 3 scores every third turn back from the last
   session_id: 'session_9',
 });
 
@@ -161,13 +162,43 @@ if (suicide && suicide.score > 0.5) {
   console.log('escalate');
 }
 for (const turn of result.trajectory ?? []) {
-  console.log(turn.turn, turn.salience, turn.signals_by_axis?.suicide);
+  // turn.turn is the 0-based position in messages; AI axes are ai_-prefixed here
+  console.log(turn.turn, turn.role, turn.salience, turn.signals_by_axis?.suicide, turn.signals_by_axis?.ai_manipulation);
 }
-console.log(result.trajectory_shape?.phases, result.meta.version);
+const shape = result.trajectory_shape;
+if (shape?.peak_turn !== undefined && result.trajectory) {
+  const peak = result.trajectory[shape.peak_turn]; // peak_turn indexes the trajectory array, not messages
+  console.log(peak.turn, shape.phases?.[shape.peak_turn], shape.onsets?.suicide);
+}
+console.log(result.meta.version);
 ```
 
 `user_id`, `session_id` and `agent_id` (1 to 256 characters) are stored for
 dashboard analytics and never forwarded to the model.
+
+### Per-turn trajectory
+
+Set `per_turn: true` to receive `trajectory`, one entry per scored turn,
+and `trajectory_shape`. Not every turn is scored: `trajectory_stride`
+defaults to 3 on the server, which scores the last turn and then every
+third turn back from it, so a 5-message conversation yields turns 4 and 1.
+Pass `trajectory_stride: 1` to score every turn. An entry's `turn` is the
+0-based position of that turn in `messages` (for `text` input, of the
+parsed speaker turn) and its `role` is `user` or `assistant`.
+`signals_by_axis` keys the user axes by bare name (`suicide`), the AI axes
+with an `ai_` prefix (`ai_manipulation`, where the top level has
+`signals.ai.manipulation`), and adds two context scalars, `genuine` and
+`fiction`.
+
+`trajectory_shape` summarises the crisis (suicide) axis over the scored
+turns. `onsets` maps an axis to the `turn` value at which it first crossed
+its onset threshold. `phases`, `slopes` and `peak_turn` index the
+`trajectory` array instead: `phases[i]` and `slopes[i]` describe
+`trajectory[i]`, and `peak_turn` is the array position of the entry with
+the highest crisis score, so `trajectory[shape.peak_turn].turn` is the
+message index. The authenticated route returns `trajectory_shape` whenever
+at least one turn was scored; the demo route (`/v1/try/ocular`) returns
+`trajectory` but never `trajectory_shape`.
 
 ## Oversight
 
