@@ -2,7 +2,10 @@
 # a schedule. It spends real balance on the account behind
 # NOPE_E2E_API_KEY, which must be configured separately as a repository
 # secret (Settings > Secrets and variables > Actions) before this workflow
-# can run. A full run costs about $1.82; the smoke subset about $0.13.
+# can run. A full run of this repo's suite costs about $0.61 (each Oversight row
+# is 100 mills); the smoke subset about $0.13. Do not dispatch it at the same time
+# as the python-sdk live workflow: the demo endpoints share per-IP rate limits and
+# GitHub concurrency groups are per repository.
 name: Live
 
 on:

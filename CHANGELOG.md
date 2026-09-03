@@ -7,7 +7,8 @@ follows [Semantic Versioning](https://semver.org/).
 ## 4.0.0 - 2026-09-03
 
 The types now model the live wire of api.nope.net (captured fixtures under
-`tests/fixtures/` are checked against every response type on each run), and
+`tests/fixtures/` are checked against every v1 response type on each run; the
+deprecated `/v0/screen` shape has no live fixture), and
 the client covers the webhook-management and billing routes. Several
 inherited fields that no route ever returned are gone. 3.0.0 was committed
 in the repository and never tagged or published; its one change (removal of

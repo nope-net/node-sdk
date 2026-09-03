@@ -1257,10 +1257,19 @@ export interface OversightIngestConversation extends OversightConversation {
 
 /** Options for oversight.ingest. */
 export interface OversightIngestOptions {
-  /** Conversations to analyze and store (1 to 300). */
+  /**
+   * Conversations to analyze and store (1 to 300). The request body is capped at
+   * 512 KB, so a batch near the count limit must consist of short conversations.
+   */
   conversations: OversightIngestConversation[];
 
-  /** URL to notify when ingestion completes (`oversight.ingestion.complete` event). */
+  /**
+   * Legacy per-request callback. The API POSTs an unsigned
+   * `{ event: 'ingestion_complete', timestamp, ingestion_id, conversations_processed,
+   * errors_count, high_concern_count }` here when the batch completes. The signed
+   * `oversight.ingestion.complete` event is delivered to webhooks registered with
+   * `client.webhooks`, never to this URL.
+   */
   webhook_url?: string;
 
   /** Configuration options. */

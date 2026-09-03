@@ -481,7 +481,10 @@ export class NopeClient<Demo extends boolean = false> {
      * in demo mode.
      *
      * @param options.conversations - 1 to 300 conversations, each with a `conversation_id`
-     * @param options.webhook_url - URL to notify on completion (`oversight.ingestion.complete`)
+     * @param options.webhook_url - Legacy per-request callback: the API POSTs an unsigned
+     *   `{ event: 'ingestion_complete', timestamp, ingestion_id, conversations_processed,
+     *   errors_count, high_concern_count }` to this URL when the batch completes. The signed
+     *   `oversight.ingestion.complete` event goes to webhooks registered with `client.webhooks`.
      * @param options.config - `model`
      *
      * @throws {NopeFeatureError} Oversight not enabled for this account (403)

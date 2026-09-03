@@ -218,7 +218,12 @@ for (const behavior of result.detected_behaviors) {
 - Turn numbers in results count assistant turns from 1.
 
 Batch analysis with dashboard storage takes up to 300 conversations, each
-with a `conversation_id`, and returns synchronously:
+with a `conversation_id`, and returns synchronously. The request body is
+capped at 512 KB, so a batch near the count limit must consist of short
+conversations. `webhook_url` is a legacy per-request callback: the API POSTs
+an unsigned `ingestion_complete` JSON summary there when the batch completes.
+The signed `oversight.ingestion.complete` event is delivered to webhooks
+registered with `client.webhooks`.
 
 ```typescript
 import { NopeClient } from '@nope-net/sdk';
