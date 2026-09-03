@@ -1,9 +1,8 @@
 /**
- * NOPE SDK Types (v1 API)
+ * NOPE SDK types (v1 API).
  *
- * Uses orthogonal subject/type separation:
- * - WHO is at risk (subject: self | other | unknown)
- * - WHAT type of harm (type: suicide | violence | abuse | ...)
+ * Wire field names are never renamed. Response types model what the API
+ * emits; request types model what it reads.
  */
 
 import type { FetchLike, SleepFn } from './http.js';
@@ -13,27 +12,31 @@ import type { FetchLike, SleepFn } from './http.js';
 // =============================================================================
 
 /**
- * Who is at risk
+ * Who is at risk, on the v1 wire.
  *
- * - self: The speaker is at risk
- * - other: Someone else is at risk (friend, family, stranger)
- * - unknown: Ambiguous - classic "asking for a friend" territory (v0 only; v1 maps unknown → self)
+ * - self: the speaker
+ * - other: someone else (friend, family, stranger)
+ *
+ * The classifier's internal `unknown` ("asking for a friend") is mapped to
+ * `self` before the response is built, so it never appears on /v1/evaluate.
+ * The legacy /v0/screen route still emits it: see {@link ScreenRiskSubject}.
  */
-export type RiskSubject = 'self' | 'other' | 'unknown';
+export type RiskSubject = 'self' | 'other';
+
+/** Subject on the legacy /v0/screen wire, which keeps `unknown`. */
+export type ScreenRiskSubject = 'self' | 'other' | 'unknown';
 
 /**
- * What type of harm
- *
- * 9 harm-based types (not intermediate states or conditions):
- * - suicide: Self-directed lethal intent (C-SSRS levels derivable from features)
- * - self_harm: Non-suicidal self-injury (NSSI)
- * - self_neglect: Severe self-care failure with safeguarding concerns
- * - violence: Harm directed at others (threats, assault, homicide)
- * - abuse: Physical, emotional, sexual, financial abuse patterns
- * - sexual_violence: Rape, sexual assault, coerced sexual acts
- * - neglect: Failure to provide care for dependents
- * - exploitation: Trafficking, forced labor, sextortion, grooming
- * - stalking: Persistent unwanted contact/surveillance
+ * What type of harm. Nine harm-based types:
+ * - suicide: self-directed lethal intent
+ * - self_harm: non-suicidal self-injury
+ * - self_neglect: severe self-care failure with safeguarding concerns
+ * - violence: harm directed at others
+ * - abuse: physical, emotional, sexual, financial abuse patterns
+ * - sexual_violence: rape, sexual assault, coerced sexual acts
+ * - neglect: failure to provide care for dependents
+ * - exploitation: trafficking, forced labour, sextortion, grooming
+ * - stalking: persistent unwanted contact or surveillance
  */
 export type RiskType =
   | 'suicide'
@@ -46,31 +49,17 @@ export type RiskType =
   | 'exploitation'
   | 'stalking';
 
-/**
- * Communication style - how the user is expressing themselves
- *
- * Orthogonal to risk assessment - informs response style, not risk level.
- */
-export type CommunicationStyle =
-  | 'direct' // Explicit first-person ("I want to die")
-  | 'humor' // Dark humor, memes, "lol kms"
-  | 'fiction' // Creative writing, poetry, roleplay
-  | 'hypothetical' // "What if someone...", philosophical
-  | 'distanced' // "Asking for a friend", third-party framing
-  | 'clinical' // Professional/medical language
-  | 'minimized' // Hedged, softened ("not that I would, but...")
-  | 'adversarial'; // Jailbreak attempts, encoded content
-
-/** Severity scale (how bad) */
+/** Severity scale (how bad). */
 export type Severity = 'none' | 'mild' | 'moderate' | 'high' | 'critical';
 
-/** Imminence scale (how soon) */
+/** Imminence scale (how soon). */
 export type Imminence = 'not_applicable' | 'chronic' | 'subacute' | 'urgent' | 'emergency';
 
-/** Evidence grade for legal/clinical flags */
-export type EvidenceGrade = 'strong' | 'moderate' | 'weak' | 'consensus' | 'none';
-
-/** Crisis resource type */
+/**
+ * Contact modality of a crisis resource. This is the field to branch on
+ * when you need an actual line (`crisis_line`, `text_line`,
+ * `emergency_number`) rather than a support service or a website.
+ */
 export type CrisisResourceType =
   | 'emergency_number'
   | 'crisis_line'
@@ -80,10 +69,14 @@ export type CrisisResourceType =
   | 'reporting_portal'
   | 'online_resource';
 
-/** Crisis resource kind */
-export type CrisisResourceKind = 'helpline' | 'reporting_portal' | 'directory' | 'self_help_site';
+/**
+ * What the resource is. `helpline` also covers support services (the API
+ * buckets `support_service` under it), so use `type` to tell a line from a
+ * service.
+ */
+export type CrisisResourceKind = 'helpline' | 'reporting_portal' | 'self_help_site';
 
-/** Crisis resource priority tier */
+/** Semantic priority tier for display and routing. */
 export type CrisisResourcePriorityTier =
   | 'primary_national_crisis'
   | 'secondary_national_crisis'
@@ -92,495 +85,268 @@ export type CrisisResourcePriorityTier =
   | 'support_info_and_advocacy'
   | 'emergency_services';
 
-/** Hours confidence level */
+/** Confidence in the opening-hours data. */
 export type HoursConfidence = 'verified' | 'unverified' | 'approximate' | 'unknown';
 
-/** Resource prominence level */
+/** How well-known the resource is. */
 export type ResourceProminence = 'high' | 'medium' | 'low';
 
-/** Other contact method for a crisis resource */
+/** Other contact method for a crisis resource. */
 export interface OtherContact {
-  /** Contact type (e.g., 'kakao', 'viber', 'signal') */
+  /** Contact type (e.g. 'kakao', 'viber', 'signal'). */
   type: string;
-  /** ID, URL, or number */
+  /** ID, URL, or number. */
   value: string;
-  /** Human-readable label */
+  /** Human-readable label. */
   label?: string;
 }
 
-/** Pre-computed open/closed status for a crisis resource */
+/** Pre-computed open/closed status for a crisis resource. */
 export interface OpenStatus {
-  /** Whether the resource is currently open. null = uncertain */
+  /** Whether the resource is currently open. null = uncertain. */
   is_open: boolean | null;
-  /** ISO timestamp of next open/close transition */
+  /** ISO timestamp of the next open/close transition. */
   next_change?: string;
-  /** How confident we are in this status */
+  /** Confidence in this status. */
   confidence: 'high' | 'low' | 'none';
-  /** Human-readable status message */
+  /** Human-readable status message. */
   message?: string;
 }
 
 // =============================================================================
-// Risk Structure
+// Risk
 // =============================================================================
 
 /**
- * A single identified risk
- *
- * Each risk represents one subject + type combination with its assessment.
- * A conversation can have multiple risks (e.g., IPV victim with suicidal ideation).
+ * A single identified risk: one subject + type with its assessment. A
+ * conversation can carry several (an abuse victim who is also suicidal).
  */
 export interface Risk {
-  /** Who is at risk */
-  subject: RiskSubject;
-
-  /**
-   * Confidence in subject determination (0.0-1.0)
-   *
-   * Low values indicate ambiguity:
-   * - 0.9+ = Clear ("I want to kill myself" → self)
-   * - 0.5-0.7 = Moderate ("Asking for a friend" → likely self, but uncertain)
-   * - <0.5 = Very uncertain
-   */
-  subject_confidence: number;
-
-  /** What type of harm */
+  /** What type of harm. */
   type: RiskType;
 
-  /** How severe (none → critical) */
+  /** Who is at risk. */
+  subject: RiskSubject;
+
+  /** How severe (none to critical). */
   severity: Severity;
 
-  /** How soon (not_applicable → emergency) */
+  /** How soon (not_applicable to emergency). */
   imminence: Imminence;
 
-  /** Confidence in this risk assessment (0.0-1.0) */
-  confidence: number;
-
-  /** Evidence features supporting this risk */
-  features: string[];
-}
-
-// =============================================================================
-// Communication Structure
-// =============================================================================
-
-/** Communication style with confidence */
-export interface CommunicationStyleAssessment {
-  style: CommunicationStyle;
-  confidence: number;
-}
-
-/** Communication analysis */
-export interface CommunicationAssessment {
-  /** Detected communication styles (may have multiple) */
-  styles: CommunicationStyleAssessment[];
-
-  /** Detected language (ISO 639-1) */
-  language: string;
-
-  /** Detected locale (e.g., 'en-US') */
-  locale?: string;
-}
-
-// =============================================================================
-// Summary Structure
-// =============================================================================
-
-/**
- * Quick summary derived from risks array
- *
- * speaker_severity/imminence are calculated from risks where subject='self'
- * and subject_confidence > 0.5. This ensures bystanders don't get
- * crisis-level responses for third-party concerns.
- */
-export interface Summary {
-  /** Max severity from risks where subject='self' and confidence > 0.5 */
-  speaker_severity: Severity;
-
-  /** Max imminence from risks where subject='self' and confidence > 0.5 */
-  speaker_imminence: Imminence;
-
-  /** Whether any risk has subject='other' */
-  any_third_party_risk: boolean;
-
-  /** Narrative summary of key findings */
-  primary_concerns: string;
-}
-
-// =============================================================================
-// Legal Flags
-// =============================================================================
-
-/**
- * IPV-specific flags
- *
- * Based on DASH (UK) and Danger Assessment (Johns Hopkins).
- * Strangulation is the single strongest predictor of homicide in IPV.
- */
-export interface IPVFlags {
-  /** IPV indicators present */
-  indicated: boolean;
-
-  /** ANY history of strangulation/choking (750x homicide risk) */
-  strangulation: boolean;
-
-  /** Overall lethality risk */
-  lethality_risk: 'standard' | 'elevated' | 'severe' | 'extreme';
-
-  /** Escalation pattern detected */
-  escalation_pattern?: boolean;
-
-  /** Confidence in assessment */
-  confidence?: number;
-}
-
-/**
- * Safeguarding concern flags
- *
- * Indicates patterns that may trigger statutory obligations depending on
- * jurisdiction and the platform's role. NOPE flags concerns; humans determine
- * whether mandatory reporting applies based on local law and organizational policy.
- *
- * Note: AI systems are not mandatory reporters under any current statute.
- * This flag surfaces patterns for human review, not legal determinations.
- */
-export interface SafeguardingConcernFlags {
-  /** Safeguarding concern indicators present */
-  indicated: boolean;
-
-  /** Context triggering the concern */
-  context: 'minor_involved' | 'vulnerable_adult' | 'csa' | 'infant_at_risk' | 'elder_abuse';
-}
-
-/** Third-party threat flags (Tarasoff-style duty to warn) */
-export interface ThirdPartyThreatFlags {
-  /** Tarasoff duty potentially triggered */
-  tarasoff_duty: boolean;
-
-  /** Specific identifiable target */
-  specific_target: boolean;
-
-  /** Confidence in assessment */
-  confidence?: number;
-}
-
-/**
- * Stalking flags
- *
- * Based on SAM (Stalking Assessment & Management) framework.
- * Ex-intimate partner stalking has significantly elevated homicide risk.
- */
-export interface StalkingFlags {
-  /** Former intimate partner (highest risk per SAM) */
-  ex_intimate_partner: boolean;
-
-  /** Escalation in frequency/severity detected */
-  escalation_detected: boolean;
-
-  /** History of violence toward victim */
-  violence_history: boolean;
-
-  /** Victim expresses fear for safety (predictive per SAM) */
-  victim_fear_expressed: boolean;
-
   /**
-   * Risk level derived from SAM domains:
-   * - severe: violence_history + escalation, OR prior violence + victim fears for life
-   * - elevated: ex_intimate_partner, OR escalation + victim_fear
-   * - standard: Basic stalking pattern without amplifiers
+   * Evidence features supporting this risk (e.g. 'passive_ideation',
+   * 'hopelessness'). The key is absent when no feature fired.
    */
-  risk_level: 'standard' | 'elevated' | 'severe';
-}
-
-/**
- * Legal/safety flags
- *
- * Derived from risks + features but surfaced separately for easy consumption.
- */
-export interface LegalFlags {
-  /** Intimate partner violence indicators */
-  ipv?: IPVFlags;
-
-  /** Safeguarding concern indicators (patterns that may trigger statutory review) */
-  safeguarding_concern?: SafeguardingConcernFlags;
-
-  /** Third-party threat indicators */
-  third_party_threat?: ThirdPartyThreatFlags;
-
-  /** Stalking indicators (SAM-based) */
-  stalking?: StalkingFlags;
-}
-
-// =============================================================================
-// Protective Factors
-// =============================================================================
-
-/** Protective factors */
-export interface ProtectiveFactorsInfo {
-  /** Specific protective factors present */
-  protective_factors?: string[];
-
-  /** Overall strength assessment */
-  protective_factor_strength?: 'weak' | 'moderate' | 'strong';
-}
-
-// =============================================================================
-// Filter Result
-// =============================================================================
-
-/** Filter stage results */
-export interface FilterResult {
-  /** Triage level */
-  triage_level: 'none' | 'concern';
-
-  /** Preliminary risks detected (lightweight) */
-  preliminary_risks: Array<{
-    subject: RiskSubject;
-    type: RiskType;
-    confidence: number;
-  }>;
-
-  /** Reason for triage decision */
-  reason: string;
+  features?: string[];
 }
 
 // =============================================================================
 // Crisis Resources
 // =============================================================================
 
-/** A crisis resource (helpline, text line, etc.) */
+/**
+ * A crisis resource (helpline, text line, reporting portal, website).
+ *
+ * Contact fields are flattened to the top level; `type` says which modality
+ * the resource is. `open_status` is computed server-side at response time.
+ */
 export interface CrisisResource {
-  /** Contact modality (how to reach them) */
+  /**
+   * Database id. Present on search results; absent from evaluate, basic
+   * and smart results until API fix A-6 deploys.
+   */
+  id?: string;
+  /** Contact modality (how to reach them). */
   type: CrisisResourceType;
-  /** Name of the resource/organization */
+  /** Name of the resource or organisation. */
   name: string;
-  /** Native script name (e.g., いのちの電話) for non-English resources */
+  /** Native-script name (e.g. いのちの電話) for non-English resources. */
   name_local?: string;
-  /** Phone number */
+  /** Phone number. */
   phone?: string;
-  /** Text instructions (e.g., 'Text HOME to 741741') - human readable fallback */
+  /** Human-readable text instructions (e.g. 'Text HOME to 741741'). */
   text_instructions?: string;
-  /** SMS number for sms: links (e.g., '741741') */
+  /** SMS number for sms: links (e.g. '741741'). */
   sms_number?: string;
-  /** SMS body/keyword for sms: links (e.g., 'HOME') */
+  /** SMS body or keyword for sms: links (e.g. 'HOME'). */
   sms_body?: string;
-  /** Chat URL */
+  /** Chat URL. */
   chat_url?: string;
-  /** WhatsApp deep link (e.g., 'https://wa.me/18002738255') */
+  /** WhatsApp deep link. */
   whatsapp_url?: string;
-  /** Email address */
+  /** Email address. */
   email?: string;
-  /** WeChat ID (China) */
+  /** WeChat ID. */
   wechat_id?: string;
-  /** LINE deep link (Japan/Thailand/Taiwan) */
+  /** LINE deep link. */
   line_url?: string;
-  /** Telegram deep link */
+  /** Telegram deep link. */
   telegram_url?: string;
-  /** Other contact methods not covered above */
+  /** Other contact methods not covered above. */
   other_contacts?: OtherContact[];
-  /** Website URL */
+  /** Website URL. */
   website_url?: string;
-  /** Human-readable availability (e.g., '24/7', 'Mon-Fri 9am-5pm') */
+  /** Human-readable availability (e.g. '24/7', 'Mon-Fri 9am-5pm'). */
   availability?: string;
-  /** Machine-readable 24/7 flag */
+  /** Machine-readable 24/7 flag. */
   is_24_7?: boolean;
-  /** IANA timezone identifier (e.g., 'America/New_York') */
+  /** IANA timezone identifier (e.g. 'America/New_York'). */
   timezone?: string;
-  /** OpenStreetMap opening_hours format (e.g., 'Mo-Fr 09:00-17:00') */
+  /** OpenStreetMap opening_hours format (e.g. 'Mo-Fr 09:00-17:00'). */
   opening_hours_osm?: string;
-  /** Confidence level in hours data */
+  /** Confidence in the hours data. */
   hours_confidence?: HoursConfidence;
-  /** Pre-computed open/closed status */
+  /** Pre-computed open/closed status. */
   open_status?: OpenStatus;
-  /** Languages supported (ISO codes) */
+  /** Languages supported (ISO 639-1 codes). */
   languages?: string[];
-  /** Description of the service */
+  /** Description of the service. */
   description?: string;
-  /** What the resource IS (helpline vs reporting portal vs directory) */
+  /** What the resource is (helpline, reporting portal, self-help site). */
   resource_kind?: CrisisResourceKind;
-  /** Issues this resource handles (aligned with classification taxonomy) */
+  /** Issues this resource handles (see {@link ServiceScope}). */
   service_scope?: string[];
-  /** Populations this resource serves */
+  /** Populations this resource serves (see {@link Population}). */
   population_served?: string[];
-  /** Semantic priority for display and routing */
+  /** Semantic priority for display and routing. */
   priority_tier?: CrisisResourcePriorityTier;
-  /** Freeform tags for filtering/display */
+  /** Freeform tags for filtering and display. */
   tags?: string[];
-  /** How well-known/established the resource is */
+  /** How well-known the resource is. */
   prominence?: ResourceProminence;
-  /** Source of this resource */
-  source?: 'database' | 'web_search';
+  /** ISO 3166-1 alpha-2 codes this resource serves. Absent or empty = global. */
+  country_codes?: string[];
+  /** ISO 3166-2 subdivision codes (e.g. 'US-CA', 'GB-NIR'). Absent or empty = country-wide. */
+  subdivision_codes?: string[];
 }
 
 // =============================================================================
-// Request Types
+// Evaluate: request
 // =============================================================================
 
-/** A message in the conversation */
+/** A message in the conversation. */
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
-  timestamp?: string; // ISO 8601
-}
-
-/** Configuration for evaluation request */
-export interface EvaluateConfig {
-  /** Country for crisis resources (ISO country code, e.g., 'US', 'GB') */
-  country?: string;
-
-  /**
-   * @deprecated Use `country` instead. This field is silently ignored by the v1 API.
-   * Kept for backwards compatibility with v1/try/evaluate which accepts this name.
-   */
-  user_country?: string;
-
-  /** @deprecated v0-only. Ignored by the v1 endpoint. */
-  locale?: string;
-
-  /** @deprecated v0-only. Ignored by the v1 endpoint. */
-  user_age_band?: 'adult' | 'minor' | 'unknown';
-
-  /** @deprecated v0-only. Ignored by the v1 endpoint. */
-  policy_id?: string;
-
-  /** Include crisis resources in response. Default: true */
-  include_resources?: boolean;
-
-  /** @deprecated v0-only. Ignored by the v1 endpoint. */
-  return_assistant_reply?: boolean;
-
-  /** @deprecated v0-only. Ignored by the v1 endpoint. */
-  assistant_safety_mode?: 'template' | 'generate';
-
-  /** @deprecated v0-only. Ignored by the v1 endpoint. */
-  use_multiple_judges?: boolean;
-
-  /** @deprecated v0-only. Ignored by the v1 endpoint. */
-  models?: string[];
-
-  /** Customer-provided conversation ID for webhook correlation */
-  conversation_id?: string;
-
-  /** Customer-provided end-user ID for webhook correlation */
-  end_user_id?: string;
-}
-
-/** Request to /v1/evaluate endpoint */
-export interface EvaluateRequest {
-  /** Conversation messages. Either messages OR text must be provided */
-  messages?: Message[];
-
-  /** Plain text input. Either messages OR text must be provided */
-  text?: string;
-
-  /** Configuration options */
-  config: EvaluateConfig;
-
-  /** Free-text user context to help shape responses */
-  user_context?: string;
-}
-
-// =============================================================================
-// Response Types
-// =============================================================================
-
-/** Recommended reply content */
-export interface RecommendedReply {
-  content: string;
-  source: 'template' | 'llm_generated';
-  notes?: string;
-}
-
-/** Metadata about the request/response */
-export interface ResponseMetadata {
-  access_level?: 'unauthenticated' | 'authenticated' | 'admin';
-  is_admin?: boolean;
-  messages_truncated?: boolean;
-  input_format?: 'structured' | 'text_blob';
-  api_version: 'v1';
-  /** True if request came via /v1/try/* endpoints */
-  try_endpoint?: boolean;
+  /** ISO 8601. Accepted by the API and not used by the v1 classifier. */
+  timestamp?: string;
 }
 
 /**
- * Response from /v1/evaluate endpoint
- *
- * Note: The v1 API returns a simplified response.
- * Some fields from legacy v0 responses may not be present.
+ * Configuration for an evaluate request. These are the only keys the v1
+ * route reads.
  */
+export interface EvaluateConfig {
+  /**
+   * ISO 3166-1 alpha-2 country for crisis resources (default 'US').
+   *
+   * Demo mode: the client also sends this value as `user_country`, which the
+   * /v1/try/evaluate route reads until API fix A-1 deploys.
+   */
+  country?: string;
+
+  /**
+   * Include crisis resources in the response. Default true. The demo route
+   * ignores `false` and always returns resources (API fix A-1).
+   */
+  include_resources?: boolean;
+
+  /** Your conversation id, echoed on webhook payloads. */
+  conversation_id?: string;
+
+  /** Your end-user id, echoed on webhook payloads. */
+  end_user_id?: string;
+}
+
+/** Wire body of POST /v1/evaluate. */
+export interface EvaluateRequest {
+  /** Conversation messages. Either messages or text must be provided. */
+  messages?: Message[];
+
+  /** Plain text input. Either messages or text must be provided. */
+  text?: string;
+
+  /** Configuration options. */
+  config?: EvaluateConfig;
+}
+
+/** Options for the evaluate method. */
+export interface EvaluateOptions {
+  /** Conversation messages (1 to 100, roles user|assistant). Either messages or text. */
+  messages?: Message[];
+
+  /** Plain text input (up to 50,000 characters). Either messages or text. */
+  text?: string;
+
+  /** Configuration options. */
+  config?: EvaluateConfig;
+}
+
+// =============================================================================
+// Evaluate: response
+// =============================================================================
+
+/** Metadata about the request and response. */
+export interface EvaluateMetadata {
+  /** Always 'v1'. */
+  api_version: 'v1';
+
+  /** Whether the input arrived as messages or as a text blob. The demo route always reports 'structured'. */
+  input_format: 'structured' | 'text_blob';
+
+  /** True when the input was truncated before classification (demo keeps the last 10 messages). */
+  messages_truncated?: boolean;
+
+  /** True when served by /v1/try/evaluate. */
+  try_endpoint?: boolean;
+
+  /** Model identifier; demo route only. */
+  model?: string;
+}
+
+/** A crisis resource with a short relevance note. */
+export type EvaluateResource = CrisisResource & {
+  /** One-line note on why this resource was chosen. */
+  why: string;
+};
+
+/** Crisis resources matched to the detected risks. */
+export interface EvaluateResources {
+  /** The resource to show first. */
+  primary: EvaluateResource;
+  /** Up to three further resources. */
+  secondary: EvaluateResource[];
+}
+
+/** Response from POST /v1/evaluate (and /v1/try/evaluate). */
 export interface EvaluateResponse {
-  /** Unique request ID for audit trail correlation */
-  request_id: string;
-
-  /** ISO 8601 timestamp for audit trail */
-  timestamp: string;
-
-  /** Identified risks (the core of v1) */
+  /** Identified risks; empty when nothing was detected. */
   risks: Risk[];
 
-  // === v1 response fields ===
+  /** Reasoning behind the assessment. */
+  rationale: string;
 
-  /** Chain-of-thought reasoning from Edge model (v1 only) */
-  rationale?: string;
+  /** Highest severity among risks where subject is 'self'. */
+  speaker_severity: Severity;
 
-  /** Max severity for speaker (subject='self'). Top-level in v1, nested in summary for v0 */
-  speaker_severity?: Severity;
+  /** Highest imminence among risks where subject is 'self'. */
+  speaker_imminence: Imminence;
 
-  /** Max imminence for speaker (subject='self'). Top-level in v1, nested in summary for v0 */
-  speaker_imminence?: Imminence;
+  /** Whether crisis resources should be shown to the speaker. */
+  show_resources: boolean;
 
-  /** Whether to show crisis resources (v1 only) */
-  show_resources?: boolean;
+  /** Matched crisis resources; present when show_resources is true and resources were requested. */
+  resources?: EvaluateResources;
 
-  /** Crisis resources with 'why' explanations (v1 format). Contains primary and secondary keys */
-  resources?: {
-    primary?: CrisisResource & { why: string };
-    secondary?: Array<CrisisResource & { why: string }>;
-  };
+  /** Unique request id for audit correlation. */
+  request_id: string;
 
-  // === Legacy v0 response fields (may not be present in v1) ===
+  /** ISO 8601 timestamp. */
+  timestamp: string;
 
-  /** Communication style analysis (v0 only) */
-  communication?: CommunicationAssessment;
-
-  /** Quick summary derived from risks (v0 only, use speaker_severity/speaker_imminence for v1) */
-  summary?: Summary;
-
-  /** Legal/safety flags (v0 only) */
-  legal_flags?: LegalFlags;
-
-  /** Protective factors (v0 only) */
-  protective_factors?: ProtectiveFactorsInfo;
-
-  /** Overall confidence in assessment (v0 only) */
-  confidence?: number;
-
-  /** Judge agreement if multiple judges used (v0 only) */
-  agreement?: number;
-
-  /** Crisis resources for user's region (v0 format) */
-  crisis_resources?: CrisisResource[];
-
-  /** Pre-built widget URL (only when speaker_severity > 'none') */
-  widget_url?: string;
-
-  /** Recommended reply content */
-  recommended_reply?: RecommendedReply;
-
-  /** LLM-generated query for resource matching */
-  resource_query?: string;
-
-  /** LLM-generated tags for specialized resources */
-  resource_tags?: string[];
-
-  /** LLM reflection/reasoning (v0 only, use rationale for v1) */
-  reflection?: string;
-
-  /** Filter stage results (v0 only) */
-  filter_result?: FilterResult;
-
-  /** Metadata about the request/response */
-  metadata?: ResponseMetadata;
+  /** Request and response metadata. */
+  metadata?: EvaluateMetadata;
 }
 
 // =============================================================================
@@ -625,154 +391,106 @@ export interface NopeClientOptions {
   sleep?: SleepFn;
 }
 
-/** Options for the evaluate method */
-export interface EvaluateOptions {
-  /** Conversation messages. Either messages OR text must be provided */
-  messages?: Message[];
-
-  /** Plain text input. Either messages OR text must be provided */
-  text?: string;
-
-  /** Configuration options */
-  config?: EvaluateConfig;
-
-  /** Free-text user context to help shape responses */
-  userContext?: string;
-}
-
 // =============================================================================
-// Screen Types (for legacy /v0/screen endpoint — use evaluate() instead)
+// Screen Types (legacy /v0/screen; use evaluate() instead)
 // =============================================================================
 
-/** @deprecated Use evaluate() and Risk instead. Screen types are for the legacy /v0/screen endpoint. */
+/** @deprecated Use evaluate() and Risk. A risk on the legacy /v0/screen wire. */
 export interface ScreenRisk {
-  /** What type of harm */
+  /** What type of harm. */
   type: RiskType;
 
-  /** Who is at risk */
-  subject: RiskSubject;
+  /** Who is at risk (the v0 wire keeps 'unknown'). */
+  subject: ScreenRiskSubject;
 
-  /** How severe */
+  /** How severe. */
   severity: Severity;
 
-  /** How soon */
+  /** How soon. */
   imminence: Imminence;
 
-  /** Confidence in this risk assessment (0.0-1.0) */
+  /** Confidence in this risk assessment (0.0 to 1.0). */
   confidence: number;
 }
 
-/** Recommended supportive reply for screen response */
+/** @deprecated Recommended supportive reply on the legacy /v0/screen wire. */
 export interface ScreenRecommendedReply {
-  /** The recommended reply content */
+  /** The recommended reply content. */
   content: string;
 
-  /** Source of the reply (always 'llm_generated') */
+  /** Always 'llm_generated'. */
   source: 'llm_generated';
 }
 
-/** Primary crisis resource (e.g., 988 Lifeline) */
-export interface ScreenCrisisResourcePrimary {
-  name: string;
-  description: string;
-  phone: string;
-  text: string;
-  chat_url: string;
-  website_url: string;
-  availability: string;
-  languages: string[];
-}
-
-/** Secondary crisis resource (e.g., Crisis Text Line) */
-export interface ScreenCrisisResourceSecondary {
-  name: string;
-  description: string;
-  text: string;
-  sms_number: string;
-  chat_url: string;
-  website_url: string;
-  availability: string;
-  languages: string[];
-}
-
-/** @deprecated Crisis resources returned by legacy /v0/screen endpoint */
+/** @deprecated Crisis resources returned by the legacy /v0/screen endpoint. */
 export interface ScreenCrisisResources {
-  primary: ScreenCrisisResourcePrimary;
-  secondary: ScreenCrisisResourceSecondary[];
+  primary: CrisisResource;
+  secondary: CrisisResource[];
 }
 
-/** Suggested display text for crisis resources */
-export interface ScreenDisplayText {
-  /** Short message (e.g., "If you're in crisis, call or text 988") */
-  short: string;
-  /** Detailed message with more context */
-  detailed: string;
-}
-
-/** @deprecated Debug information for legacy /v0/screen (only if requested) */
+/** @deprecated Debug information for the legacy /v0/screen endpoint (only when requested). */
 export interface ScreenDebugInfo {
   model: string;
   latency_ms: number;
-  raw_response?: string;
 }
 
-/** @deprecated Use evaluate() instead. Screen types are for the legacy /v0/screen endpoint. */
+/** @deprecated Use evaluate(). Configuration for the legacy /v0/screen endpoint. */
 export interface ScreenConfig {
-  /** ISO country code for locale-specific resources (default: 'US') */
+  /** ISO country code for crisis resources (default 'US'). */
   country?: string;
 
-  /** Include debug info (latency, raw response) */
+  /** Include debug info (model, latency). */
   debug?: boolean;
 
-  /** Generate a recommended supportive reply (additional ~$0.0005 cost) */
+  /** Generate a recommended supportive reply (extra cost). */
   include_recommended_reply?: boolean;
 }
 
-/** Options for the screen method */
+/** @deprecated Options for the screen method. */
 export interface ScreenOptions {
-  /** Conversation messages. Either messages OR text must be provided */
+  /** Conversation messages (1 to 100). Either messages or text. */
   messages?: Message[];
 
-  /** Plain text input. Either messages OR text must be provided */
+  /** Plain text input. Either messages or text. */
   text?: string;
 
-  /** Configuration options */
+  /** Configuration options. */
   config?: ScreenConfig;
 }
 
 /**
- * @deprecated Use evaluate() and EvaluateResponse instead.
- * Response from legacy /v0/screen endpoint.
+ * @deprecated Use evaluate() and EvaluateResponse.
+ * Response from the legacy /v0/screen endpoint.
  */
 export interface ScreenResponse {
-  /** Detected risks with type, subject, severity, imminence */
+  /** Detected risks with type, subject, severity, imminence, confidence. */
   risks: ScreenRisk[];
 
-  /** Should crisis resources be shown? Derived from risks[] severity */
+  /** Whether crisis resources should be shown. */
   show_resources: boolean;
 
-  /** Suicidal ideation detected. Derived from risks where type='suicide' */
+  /** Suicidal ideation detected (any risk of type 'suicide'). */
   suicidal_ideation: boolean;
 
-  /** Self-harm (NSSI) detected. Derived from risks where type='self_harm' */
+  /** Self-harm detected (any risk of type 'self_harm'). */
   self_harm: boolean;
 
-  /** Brief rationale for assessment */
+  /** Brief rationale for the assessment. */
   rationale: string;
 
-  /** Crisis resources to display (only when show_resources is true) */
+  /** Crisis resources to display (only when show_resources is true). */
   resources?: ScreenCrisisResources;
 
-  /** Request ID for audit trail */
+  /** Request id for audit correlation. */
   request_id: string;
 
-  /** ISO timestamp for audit trail */
+  /** ISO 8601 timestamp. */
   timestamp: string;
 
-  /** Debug info (only if requested) */
+  /** Debug info (only when requested). */
   debug?: ScreenDebugInfo;
 
-  /** Recommended supportive reply (only when requested + risks detected) */
+  /** Recommended supportive reply (only when requested and risks were detected). */
   recommended_reply?: ScreenRecommendedReply;
 }
 
@@ -780,7 +498,7 @@ export interface ScreenResponse {
 // Utility Functions
 // =============================================================================
 
-/** Numeric mappings for severity comparison */
+/** Numeric mapping for severity comparison. */
 export const SEVERITY_SCORES: Record<Severity, number> = {
   none: 0,
   mild: 1,
@@ -789,7 +507,7 @@ export const SEVERITY_SCORES: Record<Severity, number> = {
   critical: 4,
 };
 
-/** Numeric mappings for imminence comparison */
+/** Numeric mapping for imminence comparison. */
 export const IMMINENCE_SCORES: Record<Imminence, number> = {
   not_applicable: 0,
   chronic: 1,
@@ -798,57 +516,29 @@ export const IMMINENCE_SCORES: Record<Imminence, number> = {
   emergency: 4,
 };
 
-/**
- * Calculate speaker severity from risks array
- *
- * Only considers risks where subject='self'.
- * For v0 responses with subject_confidence, filters to confidence > 0.5.
- * For v1 responses (no subject_confidence), all self-risks are included.
- */
+/** Highest severity among risks where subject is 'self' ('none' when there are none). */
 export function calculateSpeakerSeverity(risks: Risk[]): Severity {
-  const speakerRisks = risks.filter(
-    (r) => r.subject === 'self' && (r.subject_confidence ?? 1.0) > 0.5
-  );
-
-  if (speakerRisks.length === 0) {
-    return 'none';
-  }
-
+  const speakerRisks = risks.filter((r) => r.subject === 'self');
+  if (speakerRisks.length === 0) return 'none';
   const maxScore = Math.max(...speakerRisks.map((r) => SEVERITY_SCORES[r.severity]));
-
   const entries = Object.entries(SEVERITY_SCORES) as [Severity, number][];
   const match = entries.find(([, score]) => score === maxScore);
   return match ? match[0] : 'none';
 }
 
-/**
- * Calculate speaker imminence from risks array
- *
- * For v1 responses (no subject_confidence), all self-risks are included.
- */
+/** Highest imminence among risks where subject is 'self' ('not_applicable' when there are none). */
 export function calculateSpeakerImminence(risks: Risk[]): Imminence {
-  const speakerRisks = risks.filter(
-    (r) => r.subject === 'self' && (r.subject_confidence ?? 1.0) > 0.5
-  );
-
-  if (speakerRisks.length === 0) {
-    return 'not_applicable';
-  }
-
+  const speakerRisks = risks.filter((r) => r.subject === 'self');
+  if (speakerRisks.length === 0) return 'not_applicable';
   const maxScore = Math.max(...speakerRisks.map((r) => IMMINENCE_SCORES[r.imminence]));
-
   const entries = Object.entries(IMMINENCE_SCORES) as [Imminence, number][];
   const match = entries.find(([, score]) => score === maxScore);
   return match ? match[0] : 'not_applicable';
 }
 
-/**
- * Check if any third-party risk exists
- *
- * For v1 responses (no subject_confidence), all other-risks are included.
- */
+/** Whether any risk has subject 'other'. */
 export function hasThirdPartyRisk(risks: Risk[]): boolean {
-  return risks.some((r) => r.subject === 'other' && (r.subject_confidence ?? 1.0) > 0.5);
+  return risks.some((r) => r.subject === 'other');
 }
 
 // =============================================================================

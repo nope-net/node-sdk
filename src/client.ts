@@ -4,11 +4,13 @@
  * Main client for interacting with the NOPE API.
  */
 
+import { warnOnce } from './deprecation.js';
 import { Transport, type ResponseMeta } from './http.js';
 import type {
   DetectCountryResponse,
   EvaluateOptions,
   EvaluateResponse,
+  Message,
   NopeClientOptions,
   OcularOptions,
   OcularResponse,
@@ -37,6 +39,46 @@ import type {
 const DEFAULT_BASE_URL = 'https://api.nope.net';
 const DEFAULT_TIMEOUT = 30000; // milliseconds
 const DEFAULT_MAX_RETRIES = 2;
+/** Server-side cap on /v1/evaluate and /v0/screen (evaluate.ts:111-138). */
+const MAX_EVALUATE_MESSAGES = 100;
+
+/**
+ * Validate the messages-or-text input shared by evaluate(), screen() and
+ * ocular() and return the payload fragment to send.
+ */
+function buildTextInput(
+  messages: Message[] | undefined,
+  text: string | undefined,
+  maxMessages?: number
+): Record<string, unknown> {
+  if (messages === undefined && text === undefined) {
+    throw new Error("Either 'messages' or 'text' must be provided");
+  }
+  if (messages !== undefined && text !== undefined) {
+    throw new Error("Only one of 'messages' or 'text' can be provided, not both");
+  }
+  if (messages !== undefined) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new Error("'messages' cannot be empty");
+    }
+    if (maxMessages !== undefined && messages.length > maxMessages) {
+      throw new Error(`'messages' may contain at most ${maxMessages} messages (got ${messages.length})`);
+    }
+    messages.forEach((m, i) => {
+      if (!m || (m.role !== 'user' && m.role !== 'assistant')) {
+        throw new Error(`messages[${i}]: role must be "user" or "assistant"`);
+      }
+      if (typeof m.content !== 'string') {
+        throw new Error(`messages[${i}]: content must be a string`);
+      }
+    });
+    return { messages };
+  }
+  if (typeof text !== 'string' || text.trim().length === 0) {
+    throw new Error("'text' cannot be empty");
+  }
+  return { text };
+}
 
 /**
  * Client for the NOPE safety API.
@@ -48,7 +90,7 @@ const DEFAULT_MAX_RETRIES = 2;
  * const client = new NopeClient({ apiKey: 'nope_live_...' });
  * const result = await client.evaluate({
  *   messages: [{ role: 'user', content: 'I feel hopeless' }],
- *   config: { user_country: 'US' }
+ *   config: { country: 'US' }
  * });
  * console.log(result.speaker_severity);
  * ```
@@ -82,24 +124,30 @@ export class NopeClient {
   }
 
   /**
-   * Evaluate conversation messages for safety risks.
+   * Evaluate a conversation for safety risks ($0.003 per call).
    *
-   * Either `messages` or `text` must be provided, but not both.
+   * Either `messages` or `text` must be provided, and only one of them.
+   * Client-side checks: 1 to 100 messages, roles `user` or `assistant`,
+   * non-empty text.
    *
-   * @param options - Evaluation options
-   * @param options.messages - List of conversation messages
-   * @param options.text - Plain text input (for free-form transcripts)
-   * @param options.config - Configuration options including user_country, locale, etc.
-   * @param options.userContext - Free-text context about the user
-   * @param options.proposedResponse - Optional proposed AI response to evaluate for appropriateness
+   * Demo mode routes to `/v1/try/evaluate`: no key, per-IP rate limit, the
+   * last 10 messages only, `include_resources: false` ignored, and
+   * `config.country` also sent as `user_country` (the try route reads that
+   * key until API fix A-1 deploys).
    *
-   * @returns EvaluateResponse with risks, speaker_severity, rationale, resources, etc.
+   * @param options.messages - Conversation messages
+   * @param options.text - Plain text input (free-form transcripts)
+   * @param options.config - `country`, `include_resources`, `conversation_id`, `end_user_id`
+   *
+   * @returns risks, speaker severity and imminence, rationale, matched resources
    *
    * @throws {NopeAuthError} Invalid or missing API key
-   * @throws {NopeValidationError} Invalid request payload
-   * @throws {NopeRateLimitError} Rate limit exceeded
-   * @throws {NopeServerError} Server error
-   * @throws {NopeConnectionError} Connection failed
+   * @throws {NopeValidationError} Invalid request payload (400) or body over 512 KB (413)
+   * @throws {NopeInsufficientBalanceError} Balance cannot cover the call (402)
+   * @throws {NopeRateLimitError} Rate limit exceeded after retries
+   * @throws {NopeServiceUnavailableError} Provider outage after retries (503)
+   * @throws {NopeServerError} Other server error
+   * @throws {NopeConnectionError} Connection failed or timed out
    *
    * @example
    * ```typescript
@@ -109,50 +157,24 @@ export class NopeClient {
    *     { role: 'assistant', content: 'I hear you. Can you tell me more?' },
    *     { role: 'user', content: "I just don't see the point anymore" }
    *   ],
-   *   config: { user_country: 'US' }
+   *   config: { country: 'US' }
    * });
    *
-   * if (result.speaker_severity === 'high' || result.speaker_severity === 'critical') {
-   *   console.log('High risk detected');
-   *   if (result.resources?.primary) {
-   *     console.log(`  ${result.resources.primary.name}: ${result.resources.primary.phone}`);
-   *   }
+   * if (result.show_resources && result.resources) {
+   *   console.log(`${result.resources.primary.name}: ${result.resources.primary.phone}`);
    * }
    * ```
    */
   async evaluate(options: EvaluateOptions): Promise<EvaluateResponse> {
-    const { messages, text, config, userContext } = options;
+    const { messages, text, config } = options;
+    const payload: Record<string, unknown> = buildTextInput(messages, text, MAX_EVALUATE_MESSAGES);
 
-    if (messages === undefined && text === undefined) {
-      throw new Error("Either 'messages' or 'text' must be provided");
+    const wireConfig: Record<string, unknown> = { ...(config ?? {}) };
+    if (this.demo && config?.country) {
+      // /v1/try/evaluate reads config.user_country (API fix A-1 pending).
+      wireConfig.user_country = config.country;
     }
-    if (messages !== undefined && text !== undefined) {
-      throw new Error("Only one of 'messages' or 'text' can be provided, not both");
-    }
-
-    // Build request payload — normalize config for v1 API compatibility
-    const normalizedConfig: Record<string, unknown> = { ...(config ?? {}) };
-
-    // Map deprecated user_country → country for v1 API
-    if (normalizedConfig.user_country && !normalizedConfig.country) {
-      normalizedConfig.country = normalizedConfig.user_country;
-    }
-
-    const payload: Record<string, unknown> = {
-      config: normalizedConfig,
-    };
-
-    if (messages !== undefined) {
-      payload.messages = messages;
-    }
-
-    if (text !== undefined) {
-      payload.text = text;
-    }
-
-    if (userContext !== undefined) {
-      payload.user_context = userContext;
-    }
+    payload.config = wireConfig;
 
     const endpoint = this.demo ? '/v1/try/evaluate' : '/v1/evaluate';
     return this.request<EvaluateResponse>('POST', endpoint, payload);
@@ -221,7 +243,7 @@ export class NopeClient {
    * @param options - Screen options
    * @param options.messages - List of conversation messages
    * @param options.text - Plain text input (for free-form transcripts)
-   * @param options.config - Configuration options (currently only debug flag)
+   * @param options.config - `country`, `debug`, `include_recommended_reply`
    *
    * @returns ScreenResponse with show_resources, suicidal_ideation, self_harm flags
    *
@@ -247,43 +269,19 @@ export class NopeClient {
    * ```
    */
   async screen(options: ScreenOptions): Promise<ScreenResponse> {
-    console.warn(
-      '[NOPE SDK] screen() is deprecated. Use evaluate() instead ($0.003/call). ' +
-        'screen() calls the legacy /v0/screen endpoint.'
+    warnOnce(
+      'screen',
+      'screen() is deprecated. Use evaluate() instead ($0.003/call). screen() calls the legacy /v0/screen endpoint.'
     );
 
     if (this.demo) {
-      throw new Error(
-        'screen() is not available in demo mode. Use evaluate() instead — ' +
-          'it is available via /v1/try/evaluate.'
-      );
+      throw new Error('screen() is not available in demo mode. Use evaluate(), which is served by /v1/try/evaluate.');
     }
 
     const { messages, text, config } = options;
+    const payload: Record<string, unknown> = buildTextInput(messages, text, MAX_EVALUATE_MESSAGES);
+    if (config !== undefined) payload.config = config;
 
-    if (messages === undefined && text === undefined) {
-      throw new Error("Either 'messages' or 'text' must be provided");
-    }
-    if (messages !== undefined && text !== undefined) {
-      throw new Error("Only one of 'messages' or 'text' can be provided, not both");
-    }
-
-    // Build request payload
-    const payload: Record<string, unknown> = {};
-
-    if (messages !== undefined) {
-      payload.messages = messages;
-    }
-
-    if (text !== undefined) {
-      payload.text = text;
-    }
-
-    if (config !== undefined) {
-      payload.config = config;
-    }
-
-    // Legacy v0 endpoint (requires authentication)
     return this.request<ScreenResponse>('POST', '/v0/screen', payload);
   }
 
