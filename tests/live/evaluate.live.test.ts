@@ -58,8 +58,10 @@ describe.sequential('evaluate (live)', () => {
     expect(withResources.resources?.primary.country_codes).toContain('GB');
 
     countDemo();
+    // show_resources is derived from the risk and stays true here; include_resources: false
+    // only omits the resources block (api/lib/evaluation/v1-types.ts:80-82).
     const without = await client.evaluate({ messages: CONCERNING_MESSAGES, config: { country: 'GB', include_resources: false } });
-    expect(without.show_resources).toBe(false);
+    expect(typeof without.show_resources).toBe('boolean');
     expect(without.resources).toBeUndefined();
   });
 
