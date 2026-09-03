@@ -46,10 +46,12 @@ describe('Webhook', () => {
       expect(payload.api_version).toBe('2025-01');
     });
 
-    it(`verifyRequest(headers map) accepts ${name} and returns eventId / webhookId`, () => {
+    it(`verifyRequest(headers map) accepts ${name} and returns deliveryId / webhookId / eventType`, () => {
       const result = Webhook.verifyRequest(fx.body, fx.headers, fx.secret);
       expect(result.payload).toEqual(fx.payload);
-      expect(result.eventId).toBe(fx.headers['x-nope-delivery-id']);
+      expect(result.deliveryId).toBe(fx.headers['x-nope-delivery-id']);
+      // Deprecated alias of the same header value.
+      expect(result.eventId).toBe(result.deliveryId);
       expect(result.webhookId).toBe('wh_fixture_0001');
       expect(result.eventType).toBe(name);
     });
@@ -169,6 +171,35 @@ describe('Webhook', () => {
     expect(() => Webhook.verify(fx.body, fx.headers['x-nope-signature'], fx.headers['x-nope-timestamp'], '')).toThrow(/secret is required/);
     expect(() => Webhook.verify(fx.body, fx.headers['x-nope-signature'], 'soon', fx.secret)).toThrow(/Invalid timestamp/);
     expect(() => Webhook.verifyRequest(fx.body, {}, fx.secret)).toThrow(/Missing X-NOPE-Signature/);
+  });
+
+  it('verifyRequest without the delivery header: deliveryId undefined, payload.event_id untouched', () => {
+    const body = '{"event":"test.ping","event_id":"evt_local","timestamp":"t","api_version":"2025-01","message":"hi"}';
+    const { signature, timestamp } = Webhook.sign(body, 'whsec_abc');
+    const result = Webhook.verifyRequest(
+      body,
+      { 'x-nope-signature': signature, 'x-nope-timestamp': timestamp },
+      'whsec_abc'
+    );
+    expect(result.deliveryId).toBeUndefined();
+    expect(result.eventId).toBeUndefined();
+    expect(result.eventType).toBeUndefined();
+    expect(result.webhookId).toBeUndefined();
+    expect(result.payload.event_id).toBe('evt_local');
+  });
+
+  it('sign() with an explicit timestamp signs as of that time', () => {
+    const body = '{"event":"test.ping","event_id":"evt_x","timestamp":"t","api_version":"2025-01","message":"hi"}';
+    const at = SIGNED_AT - 200;
+    const { signature, timestamp } = Webhook.sign(body, 'whsec_abc', at);
+    expect(timestamp).toBe(String(at));
+    // Now is SIGNED_AT + 30, so the signature is 230 s old: inside the window.
+    expect(Webhook.verify(body, signature, timestamp, 'whsec_abc').event).toBe('test.ping');
+    // The HMAC is bound to that timestamp.
+    expect(() => Webhook.verify(body, signature, String(at + 1), 'whsec_abc')).toThrow('Signature verification failed');
+    // And it ages from that timestamp, not from when sign() ran.
+    vi.setSystemTime(new Date((at + 301) * 1000));
+    expect(() => Webhook.verify(body, signature, timestamp, 'whsec_abc')).toThrow('Timestamp too old: 301s ago (max: 300s)');
   });
 
   it('sign() then verify() round-trips a string body at the current time', () => {

@@ -8,7 +8,10 @@
  *   X-NOPE-Signature:   sha256=<hex>
  *   X-NOPE-Timestamp:   <unix seconds>
  *   X-NOPE-Event:       evaluate.alert | oversight.alert | oversight.ingestion.complete | test.ping
- *   X-NOPE-Delivery-ID: evt_<32 hex>
+ *   X-NOPE-Delivery-ID: id of the stored delivery (the `id` of the matching
+ *                       WebhookEvent from client.webhooks.events()); retries
+ *                       of one delivery repeat it. Distinct from the
+ *                       payload's `event_id`.
  *   X-NOPE-Webhook-ID:  <webhook id>
  *
  * Pass the raw request body (string or bytes) to `verify` / `verifyRequest`.
@@ -98,7 +101,11 @@ export interface WebhookPayloadBase {
   /** Event type. */
   event: WebhookEventType;
 
-  /** Unique event id for idempotency (also sent as X-NOPE-Delivery-ID). */
+  /**
+   * Unique event id (`evt_<32 hex>`), generated when the payload is built.
+   * The X-NOPE-Delivery-ID header carries a different value: the stored
+   * delivery's id. Retries repeat both, so either one deduplicates.
+   */
   event_id: string;
 
   /** ISO 8601 creation time. */
@@ -243,11 +250,23 @@ export type WebhookHeaders =
 export interface VerifiedWebhook {
   /** The verified, parsed payload. */
   payload: WebhookPayload;
-  /** X-NOPE-Delivery-ID (equals payload.event_id). Use it to deduplicate retries. */
+  /**
+   * The X-NOPE-Delivery-ID header: the stored delivery's id, repeated on
+   * each retry of that delivery, so it deduplicates the API's retries. It
+   * is not `payload.event_id`. Undefined when the header is absent, for
+   * example on a body signed locally with `Webhook.sign`.
+   */
+  deliveryId?: string;
+  /** @deprecated Use deliveryId; this is the X-NOPE-Delivery-ID header, not payload.event_id. */
   eventId?: string;
-  /** X-NOPE-Webhook-ID. */
+  /** The X-NOPE-Webhook-ID header: id of the webhook endpoint that received the delivery. */
   webhookId?: string;
-  /** X-NOPE-Event. */
+  /**
+   * The X-NOPE-Event header: the event type (`evaluate.alert`,
+   * `oversight.alert`, `oversight.ingestion.complete` or `test.ping`). The
+   * same value is `payload.event`; the header lets you route before
+   * parsing. Undefined when the header is absent.
+   */
   eventType?: string;
 }
 
@@ -330,7 +349,9 @@ export const Webhook = {
    *
    * Reads `x-nope-signature` and `x-nope-timestamp` (case-insensitive) from
    * a Node `IncomingHttpHeaders` object, a fetch `Headers` instance, or any
-   * plain map, and returns the payload with the delivery and webhook ids.
+   * plain map, and returns the payload with `deliveryId`
+   * (X-NOPE-Delivery-ID), `webhookId` (X-NOPE-Webhook-ID) and `eventType`
+   * (X-NOPE-Event). Each id is undefined when its header is absent.
    *
    * @param body - Raw request body (string or bytes, preferred) or the parsed object
    * @param headers - Request headers
@@ -350,9 +371,11 @@ export const Webhook = {
       secret,
       options
     );
+    const deliveryId = readHeader(headers, 'x-nope-delivery-id');
     return {
       payload,
-      eventId: readHeader(headers, 'x-nope-delivery-id'),
+      deliveryId,
+      eventId: deliveryId,
       webhookId: readHeader(headers, 'x-nope-webhook-id'),
       eventType: readHeader(headers, 'x-nope-event'),
     };
@@ -361,9 +384,14 @@ export const Webhook = {
   /**
    * Sign a body the way the API does (for tests and local replay).
    *
+   * The optional third argument fixes the timestamp the HMAC is bound to.
+   * Omit it to sign as of now; pass a unix-seconds value to produce a
+   * delivery from a chosen moment, for example one older than
+   * `maxAgeSeconds` to exercise the stale-timestamp rejection.
+   *
    * @param payload - Body to sign: a string or bytes as-is, or an object serialised with JSON.stringify
    * @param secret - Signing secret
-   * @param timestamp - Unix seconds (defaults to now)
+   * @param timestamp - Unix seconds (an integer; defaults to now)
    * @returns `signature` (`sha256=<hex>`) and `timestamp` as strings
    */
   sign(payload: WebhookBody, secret: string, timestamp?: number): { signature: string; timestamp: string } {

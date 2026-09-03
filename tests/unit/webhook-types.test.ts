@@ -32,6 +32,8 @@ describe('Webhook types (compile-time)', () => {
   it('verify returns the union; verifyRequest wraps it with ids', () => {
     expectTypeOf(Webhook.verify).returns.toEqualTypeOf<WebhookPayload>();
     expectTypeOf(Webhook.verifyRequest).returns.toEqualTypeOf<VerifiedWebhook>();
+    expectTypeOf<VerifiedWebhook['deliveryId']>().toEqualTypeOf<string | undefined>();
     expectTypeOf<VerifiedWebhook['eventId']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<VerifiedWebhook['eventType']>().toEqualTypeOf<string | undefined>();
   });
 });
