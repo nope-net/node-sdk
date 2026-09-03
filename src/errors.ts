@@ -1,10 +1,12 @@
 /**
  * NOPE SDK errors.
  *
- * Every error carries `statusCode` (HTTP status, absent for connection
- * failures), `code` (the API's machine string when the body's `error` field
- * looks like one, e.g. `insufficient_balance`), `message` (the API's human
- * sentence when present) and `responseBody` (the raw response text).
+ * Every error carries `statusCode` (HTTP status; absent for connection
+ * failures and for requests the SDK rejected before sending), `code` (the
+ * API's machine string when the body's `error` field looks like one, e.g.
+ * `insufficient_balance`; `invalid_request` or `not_available_in_demo` for
+ * client-side rejections), `message` (the API's human sentence when present)
+ * and `responseBody` (the raw response text).
  */
 
 /**
@@ -69,17 +71,28 @@ export interface NopeValidationErrorOptions extends NopeErrorOptions {
 }
 
 /**
- * The request was rejected (HTTP 400, or 413 when the body exceeds the
- * 512 KB limit). `details` carries the body's extra keys, for example
- * `max_bytes`, `max_messages`, `max_content_length`, `invalid_scopes`,
- * `hint`, `details`.
+ * The request was rejected. Three sources:
+ *
+ * - HTTP 400 (invalid request) or 413 (body over the 512 KB limit):
+ *   `statusCode` is the status and `details` carries the body's extra keys,
+ *   for example `max_bytes`, `max_messages`, `max_content_length`,
+ *   `invalid_scopes`, `hint`, `details`.
+ * - Client-side validation (an empty `messages` array, a role other than
+ *   `user` or `assistant`, more than 100 messages, neither `messages` nor
+ *   `text`, and the other checks each method documents): thrown before any
+ *   request is sent, so `statusCode` is undefined; `code` is
+ *   `'invalid_request'` and `details` is empty.
+ * - A method refused on a demo client: also thrown before any request,
+ *   `statusCode` undefined, `code` `'not_available_in_demo'`.
  */
 export class NopeValidationError extends NopeError {
   readonly details: Record<string, unknown>;
 
   constructor(message = 'Invalid request', options: NopeValidationErrorOptions = {}) {
     const { details, ...rest } = options;
-    super(message, { statusCode: 400, ...rest });
+    // 400 unless the caller names a status. Client-side rejections pass
+    // `statusCode: undefined` on purpose: there was no response.
+    super(message, { ...rest, statusCode: 'statusCode' in options ? options.statusCode : 400 });
     this.name = 'NopeValidationError';
     this.details = details ?? {};
   }

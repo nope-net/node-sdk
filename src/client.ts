@@ -5,6 +5,7 @@
  */
 
 import { warnOnce } from './deprecation.js';
+import { NopeValidationError } from './errors.js';
 import { Transport, type ResponseMeta } from './http.js';
 import type {
   BillingBalanceResponse,
@@ -74,6 +75,19 @@ const MAX_IDENTITY_LENGTH = 256;
 
 type SignpostQuery = Record<string, string | number | boolean | undefined>;
 
+/**
+ * An input the SDK rejects before sending. No HTTP status (there was no
+ * response), `code: 'invalid_request'`, empty `details`.
+ */
+function invalidRequest(message: string): NopeValidationError {
+  return new NopeValidationError(message, { statusCode: undefined, code: 'invalid_request', details: {} });
+}
+
+/** A method refused on a demo client: same class, `code: 'not_available_in_demo'`. */
+function notAvailableInDemo(message: string): NopeValidationError {
+  return new NopeValidationError(message, { statusCode: undefined, code: 'not_available_in_demo', details: {} });
+}
+
 /** Merge top-level filters over `config` (top level wins) and serialise them. */
 function mergeSignpostFilters(config: SignpostConfig | undefined, top: SignpostConfig): SignpostQuery {
   const merged: SignpostConfig = { ...(config ?? {}) };
@@ -107,30 +121,30 @@ function buildTextInput(
   maxMessages?: number
 ): Record<string, unknown> {
   if (messages === undefined && text === undefined) {
-    throw new Error("Either 'messages' or 'text' must be provided");
+    throw invalidRequest("Either 'messages' or 'text' must be provided");
   }
   if (messages !== undefined && text !== undefined) {
-    throw new Error("Only one of 'messages' or 'text' can be provided");
+    throw invalidRequest("Only one of 'messages' or 'text' can be provided");
   }
   if (messages !== undefined) {
     if (!Array.isArray(messages) || messages.length === 0) {
-      throw new Error("'messages' cannot be empty");
+      throw invalidRequest("'messages' cannot be empty");
     }
     if (maxMessages !== undefined && messages.length > maxMessages) {
-      throw new Error(`'messages' may contain at most ${maxMessages} messages (got ${messages.length})`);
+      throw invalidRequest(`'messages' may contain at most ${maxMessages} messages (got ${messages.length})`);
     }
     messages.forEach((m, i) => {
       if (!m || (m.role !== 'user' && m.role !== 'assistant')) {
-        throw new Error(`messages[${i}]: role must be "user" or "assistant"`);
+        throw invalidRequest(`messages[${i}]: role must be "user" or "assistant"`);
       }
       if (typeof m.content !== 'string') {
-        throw new Error(`messages[${i}]: content must be a string`);
+        throw invalidRequest(`messages[${i}]: content must be a string`);
       }
     });
     return { messages };
   }
   if (typeof text !== 'string' || text.trim().length === 0) {
-    throw new Error("'text' cannot be empty");
+    throw invalidRequest("'text' cannot be empty");
   }
   return { text };
 }
@@ -203,7 +217,7 @@ export class NopeClient<Demo extends boolean = false> {
    * @returns risks, speaker severity and imminence, rationale, matched resources
    *
    * @throws {NopeAuthError} Invalid or missing API key
-   * @throws {NopeValidationError} Invalid request payload (400) or body over 512 KB (413)
+   * @throws {NopeValidationError} Client-side check failed (no statusCode, code `invalid_request`), invalid request payload (400) or body over 512 KB (413)
    * @throws {NopeInsufficientBalanceError} Balance cannot cover the call (402)
    * @throws {NopeRateLimitError} Rate limit exceeded after retries
    * @throws {NopeServiceUnavailableError} Provider outage after retries (503)
@@ -290,12 +304,12 @@ export class NopeClient<Demo extends boolean = false> {
 
     if (thoroughness !== undefined) {
       if (!OCULAR_THOROUGHNESS.has(thoroughness)) {
-        throw new Error('"thoroughness" must be "fast", "auto", or "thorough"');
+        throw invalidRequest('"thoroughness" must be "fast", "auto", or "thorough"');
       }
       payload.thoroughness = thoroughness;
     }
     if (per_turn !== undefined) {
-      if (typeof per_turn !== 'boolean') throw new Error('"per_turn" must be a boolean');
+      if (typeof per_turn !== 'boolean') throw invalidRequest('"per_turn" must be a boolean');
       payload.per_turn = per_turn;
     }
     if (trajectory_stride !== undefined) {
@@ -304,7 +318,7 @@ export class NopeClient<Demo extends boolean = false> {
         trajectory_stride < 1 ||
         trajectory_stride > MAX_TRAJECTORY_STRIDE
       ) {
-        throw new Error(`"trajectory_stride" must be an integer in 1..${MAX_TRAJECTORY_STRIDE}`);
+        throw invalidRequest(`"trajectory_stride" must be an integer in 1..${MAX_TRAJECTORY_STRIDE}`);
       }
       payload.trajectory_stride = trajectory_stride;
     }
@@ -316,7 +330,7 @@ export class NopeClient<Demo extends boolean = false> {
     for (const [key, value] of identity) {
       if (value === undefined) continue;
       if (typeof value !== 'string' || value.length === 0 || value.length > MAX_IDENTITY_LENGTH) {
-        throw new Error(`"${key}" must be 1..${MAX_IDENTITY_LENGTH} characters`);
+        throw invalidRequest(`"${key}" must be 1..${MAX_IDENTITY_LENGTH} characters`);
       }
       payload[key] = value;
     }
@@ -345,7 +359,7 @@ export class NopeClient<Demo extends boolean = false> {
    * @returns ScreenResponse with show_resources, suicidal_ideation, self_harm flags
    *
    * @throws {NopeAuthError} Invalid or missing API key
-   * @throws {NopeValidationError} Invalid request payload
+   * @throws {NopeValidationError} Client-side check failed or demo refusal (no statusCode), or invalid request payload (400)
    * @throws {NopeRateLimitError} Rate limit exceeded
    * @throws {NopeServerError} Server error
    * @throws {NopeConnectionError} Connection failed
@@ -372,7 +386,7 @@ export class NopeClient<Demo extends boolean = false> {
     );
 
     if (this.demo) {
-      throw new Error('screen() is not available in demo mode. Use evaluate(), which is served by /v1/try/evaluate.');
+      throw notAvailableInDemo('screen() is not available in demo mode. Use evaluate(), which is served by /v1/try/evaluate.');
     }
 
     const { messages, text, config } = options;
@@ -414,7 +428,7 @@ export class NopeClient<Demo extends boolean = false> {
      *
      * @throws {NopeFeatureError} Oversight not enabled for this account (403)
      * @throws {NopeInsufficientBalanceError} Balance cannot cover the call (402)
-     * @throws {NopeValidationError} Invalid request (400)
+     * @throws {NopeValidationError} Client-side check failed (no statusCode, code `invalid_request`) or invalid request (400)
      *
      * @example
      * ```typescript
@@ -439,20 +453,20 @@ export class NopeClient<Demo extends boolean = false> {
       const { conversation, bot_context, config, behaviors } = options;
 
       if (!conversation) {
-        throw new Error('"conversation" is required');
+        throw invalidRequest('"conversation" is required');
       }
       if (!Array.isArray(conversation.messages)) {
-        throw new Error('"conversation.messages" must be an array');
+        throw invalidRequest('"conversation.messages" must be an array');
       }
       if (conversation.messages.length === 0) {
-        throw new Error('"conversation.messages" cannot be empty');
+        throw invalidRequest('"conversation.messages" cannot be empty');
       }
       if (behaviors) {
         if (behaviors.enabled?.length && behaviors.disabled?.length) {
-          throw new Error('"behaviors.enabled" and "behaviors.disabled" are mutually exclusive');
+          throw invalidRequest('"behaviors.enabled" and "behaviors.disabled" are mutually exclusive');
         }
         if (behaviors.min_severity !== undefined && !OVERSIGHT_SEVERITIES.has(behaviors.min_severity)) {
-          throw new Error('"behaviors.min_severity" must be one of: low, medium, high, critical');
+          throw invalidRequest('"behaviors.min_severity" must be one of: low, medium, high, critical');
         }
       }
 
@@ -489,7 +503,7 @@ export class NopeClient<Demo extends boolean = false> {
      *
      * @throws {NopeFeatureError} Oversight not enabled for this account (403)
      * @throws {NopeInsufficientBalanceError} Balance cannot cover the batch (402)
-     * @throws {NopeValidationError} Invalid request (400)
+     * @throws {NopeValidationError} Client-side check failed or demo refusal (no statusCode), or invalid request (400)
      *
      * @example
      * ```typescript
@@ -505,28 +519,28 @@ export class NopeClient<Demo extends boolean = false> {
      */
     ingest: async (options: OversightIngestOptions): Promise<OversightIngestResponse> => {
       if (this.demo) {
-        throw new Error('oversight.ingest() is not available in demo mode. Use an API key.');
+        throw notAvailableInDemo('oversight.ingest() is not available in demo mode. Use an API key.');
       }
 
       const { conversations, webhook_url, config } = options;
 
       if (!Array.isArray(conversations)) {
-        throw new Error('"conversations" must be an array');
+        throw invalidRequest('"conversations" must be an array');
       }
       if (conversations.length === 0) {
-        throw new Error('"conversations" array cannot be empty');
+        throw invalidRequest('"conversations" array cannot be empty');
       }
       if (conversations.length > MAX_INGEST_CONVERSATIONS) {
-        throw new Error(
+        throw invalidRequest(
           `Too many conversations: ${conversations.length}. Maximum allowed: ${MAX_INGEST_CONVERSATIONS}`
         );
       }
       conversations.forEach((conv, i) => {
         if (!conv.conversation_id) {
-          throw new Error(`Conversation at index ${i} must have a "conversation_id"`);
+          throw invalidRequest(`Conversation at index ${i} must have a "conversation_id"`);
         }
         if (!Array.isArray(conv.messages) || conv.messages.length === 0) {
-          throw new Error(`Conversation "${conv.conversation_id}" must have non-empty "messages"`);
+          throw invalidRequest(`Conversation "${conv.conversation_id}" must have non-empty "messages"`);
         }
       });
 
@@ -762,7 +776,7 @@ export class NopeClient<Demo extends boolean = false> {
     this.requireNotDemo('signpostSearch()');
     const { query, country, limit, threshold } = options;
     if (!query) {
-      throw new Error('"query" is required');
+      throw invalidRequest('"query" is required');
     }
     return this.transport.request<SignpostSearchResponse>('GET', '/v1/signpost/search', {
       query: { query, country: country?.toUpperCase(), limit, threshold },
@@ -869,7 +883,7 @@ export class NopeClient<Demo extends boolean = false> {
 
   private requireNotDemo(method: string): void {
     if (this.demo) {
-      throw new Error(`${method} is not available in demo mode. Use an API key.`);
+      throw notAvailableInDemo(`${method} is not available in demo mode. Use an API key.`);
     }
   }
 
