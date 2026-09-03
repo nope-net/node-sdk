@@ -14,7 +14,6 @@ import {
   NopeServerError,
   NopeServiceUnavailableError,
   NopeValidationError,
-  type ApiErrorBody,
 } from './errors.js';
 import { USER_AGENT } from './version.js';
 
@@ -73,7 +72,7 @@ function toNumber(value: string | null | undefined): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function numberField(body: ApiErrorBody | undefined, key: string): number | undefined {
+function numberField(body: Record<string, unknown> | undefined, key: string): number | undefined {
   const v = body?.[key];
   return typeof v === 'number' ? v : undefined;
 }
@@ -84,11 +83,11 @@ function stringField(obj: Record<string, unknown> | undefined, key: string): str
 }
 
 /** Parse an error body; undefined when the text is not a JSON object. */
-export function parseErrorBody(text: string): ApiErrorBody | undefined {
+export function parseErrorBody(text: string): Record<string, unknown> | undefined {
   try {
     const parsed = JSON.parse(text) as unknown;
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as ApiErrorBody;
+      return parsed as Record<string, unknown>;
     }
   } catch {
     // not JSON
@@ -97,7 +96,7 @@ export function parseErrorBody(text: string): ApiErrorBody | undefined {
 }
 
 /** Retry-After in seconds: header first, then body `retry_after_seconds`. */
-export function parseRetryAfter(headers: Headers, body: ApiErrorBody | undefined): number | undefined {
+export function parseRetryAfter(headers: Headers, body: Record<string, unknown> | undefined): number | undefined {
   return toNumber(headers.get('retry-after')) ?? numberField(body, 'retry_after_seconds');
 }
 

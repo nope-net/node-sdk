@@ -210,8 +210,8 @@ at least one turn was scored; the demo route (`/v1/try/ocular`) returns
 
 ## Oversight
 
-Oversight analyzes an AI assistant's side of a conversation for 91 harmful
-behaviours in 14 categories (dependency reinforcement, crisis mishandling,
+Oversight analyzes an AI assistant's side of a conversation using 91 behavior
+codes: 87 harmful and 4 appropriate, across 14 categories (dependency reinforcement, crisis mishandling,
 manipulation, boundary violations and so on). It requires an account with
 the feature enabled; `analyze` costs 100 mills ($0.10) per call and
 `ingest` 100 mills per conversation.
@@ -258,7 +258,7 @@ for (const behavior of result.detected_behaviors) {
 
 Batch analysis with dashboard storage takes up to 300 conversations, each
 with a `conversation_id`, and returns synchronously. The request body is
-capped at 512 KB, so a batch near the count limit must consist of short
+capped at 5 MB, so a batch near the count limit must consist of short
 conversations. `webhook_url` is a legacy per-request callback: the API POSTs
 an unsigned `ingestion_complete` JSON summary there when the batch completes.
 The signed `oversight.ingestion.complete` event is delivered to webhooks

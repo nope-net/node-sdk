@@ -39,8 +39,14 @@ follows [Semantic Versioning](https://semver.org/).
   turn, 0-based `turn` values, the `ai_`-prefixed axis keys plus `genuine`
   and `fiction`, that `peak_turn`, `phases` and `slopes` index the
   `trajectory` array while `onsets` uses `turn` values, and that the demo
-  route never returns `trajectory_shape`. Every "until API fix A-n deploys"
-  note now states the deployed behaviour.
+  route never returns `trajectory_shape`. All descriptions now state the
+  deployed behaviour.
+- Oversight ingest documentation now states the deployed 5 MB body limit.
+  Analyze documentation distinguishes retained event metadata from the
+  conversation and full-result records created by ingest. The taxonomy count
+  states the 87 harmful and 4 appropriate codes separately.
+- The new `NopeError.body` property accepts any JSON object because an
+  accepted error response can omit the usual `error` and `message` fields.
 
 ## 4.0.0 - 2026-09-03
 

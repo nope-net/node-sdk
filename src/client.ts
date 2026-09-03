@@ -401,10 +401,9 @@ export class NopeClient<Demo extends boolean = false> {
   }
 
   /**
-   * Oversight: AI behavior analysis. Detects harmful assistant behaviours
-   * (dependency reinforcement, crisis mishandling, manipulation and 88
-   * others; see {@link OversightBehaviorCode}) that need conversational
-   * context.
+   * Oversight: AI behavior analysis using 91 behavior codes across 14
+   * categories. The taxonomy contains 87 harmful and 4 appropriate codes.
+   * See {@link OversightBehaviorCode}.
    *
    * Requires an account with the Oversight feature enabled
    * (NopeFeatureError otherwise). analyze costs 100 mills ($0.10) per call,
@@ -412,8 +411,10 @@ export class NopeClient<Demo extends boolean = false> {
    */
   readonly oversight = {
     /**
-     * Analyze one conversation for harmful AI behaviours. Synchronous;
-     * nothing is stored (use `ingest` for dashboard storage).
+     * Analyze one conversation for harmful AI behaviours. The call is
+     * synchronous and does not write conversation content or full results to
+     * the Oversight database. Operational and analysis-event metadata is
+     * retained under the public policy. Use `ingest` for dashboard storage.
      *
      * Turn numbers in the result count assistant turns from 1. In fast mode
      * (`config.mode: 'fast'`) `trajectory` is always `stable`,

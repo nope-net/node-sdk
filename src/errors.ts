@@ -30,7 +30,7 @@ export interface NopeErrorOptions {
   /** Raw response body text. */
   responseBody?: string;
   /** Parsed response body, when the text was a JSON object. */
-  body?: ApiErrorBody;
+  body?: Record<string, unknown>;
 }
 
 /**
@@ -46,7 +46,7 @@ export class NopeError extends Error {
    * non-JSON bodies, for connection failures and for client-side
    * rejections. `responseBody` keeps the raw text either way.
    */
-  readonly body?: ApiErrorBody;
+  readonly body?: Record<string, unknown>;
 
   constructor(message: string, options: NopeErrorOptions = {}) {
     super(message);

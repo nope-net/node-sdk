@@ -63,9 +63,8 @@ const BINDINGS: Record<string, FixtureBinding> = {
   'signpost/detect-country.miss.json': { type: 'DetectCountryResponse' },
   'signpost/by-id.json': { type: 'SignpostByIdResponse' },
 
-  // Captured 2026-09-03 before API fix A-5 (billing.ts:152-175,308-349); the
-  // fields that fix adds are typed optional until it deploys, so these check
-  // against the real types.
+  // Captured 2026-09-03. The replaced billing values preserve the current
+  // response structure and are checked against the public types.
   'billing/balance.json': { type: 'BillingBalanceResponse' },
   'billing/usage.json': { type: 'BillingUsageResponse' },
   'billing/pricing.json': { type: 'BillingPricingResponse' },

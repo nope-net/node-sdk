@@ -1262,7 +1262,7 @@ export interface OversightIngestConversation extends OversightConversation {
 export interface OversightIngestOptions {
   /**
    * Conversations to analyze and store (1 to 300). The request body is capped at
-   * 512 KB, so a batch near the count limit must consist of short conversations.
+   * 5 MB, so a batch near the count limit must consist of short conversations.
    */
   conversations: OversightIngestConversation[];
 
@@ -1731,4 +1731,3 @@ export interface BillingTopupResponse {
   /** Stripe Checkout URL to redirect the user to. */
   checkout_url: string;
 }
-
