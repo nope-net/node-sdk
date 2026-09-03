@@ -23,8 +23,9 @@ describe.sequential('signpost (live)', () => {
     expect(scoped.scopes_requested).toEqual(['suicide']);
 
     // `subdivisions` ranks rather than filters: resources tagged with the requested
-    // subdivision come first, country-wide resources next, other subdivisions last
-    // (api/lib/resources/DatabaseResourceResolver.ts, subdivision sort).
+    // subdivision rank ahead of resources tagged with other subdivisions; country-wide
+    // resources are interleaved by the other ranking rules
+    // (api/lib/resources/DatabaseResourceResolver.ts, subdivision sort clauses).
     const ni = await client.signpost({ country: 'GB', subdivisions: ['GB-NIR'], limit: 10 });
     expect(ni.count).toBe(ni.resources.length);
     const tier = (r: { subdivision_codes?: string[] }): number => {
@@ -34,8 +35,10 @@ describe.sequential('signpost (live)', () => {
       return 2;
     };
     const tiers = ni.resources.map(tier);
-    expect([...tiers].sort((a, b) => a - b)).toEqual(tiers);
     expect(tiers[0]).toBe(0);
+    const lastMatch = tiers.lastIndexOf(0);
+    const firstOther = tiers.indexOf(2);
+    expect(firstOther === -1 || lastMatch < firstOther).toBe(true);
   });
 
   it('row 18: smart auth -> ranked[]{rank, resource, why}, at most 5', async () => {
