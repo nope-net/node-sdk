@@ -40,6 +40,7 @@
     "test:watch": "vitest",
     "test:live": "vitest run -c vitest.live.config.ts",
     "test:live:smoke": "SMOKE=1 vitest run -c vitest.live.config.ts",
+    "generate:fixtures": "tsx scripts/generate-fixture-modules.ts",
     "prepublishOnly": "pnpm build"
   },
   "keywords": [
