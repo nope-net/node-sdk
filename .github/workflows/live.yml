@@ -1,0 +1,46 @@
+# Live suite against api.nope.net. Manual only (workflow_dispatch); never on
+# a schedule. It spends real balance on the account behind
+# NOPE_E2E_API_KEY, which must be configured separately as a repository
+# secret (Settings > Secrets and variables > Actions) before this workflow
+# can run. A full run costs about $1.82; the smoke subset about $0.13.
+name: Live
+
+on:
+  workflow_dispatch:
+    inputs:
+      smoke:
+        description: Run the SMOKE=1 subset instead of the full matrix
+        type: boolean
+        default: true
+
+concurrency:
+  group: live-api
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run the live suite
+        env:
+          NOPE_LIVE: '1'
+          NOPE_E2E_API_KEY: ${{ secrets.NOPE_E2E_API_KEY }}
+        run: |
+          if [ -z "$NOPE_E2E_API_KEY" ]; then
+            echo "NOPE_E2E_API_KEY is not configured as a repository secret." >&2
+            exit 1
+          fi
+          if [ "${{ inputs.smoke }}" = "true" ]; then
+            pnpm test:live:smoke
+          else
+            pnpm test:live
+          fi
