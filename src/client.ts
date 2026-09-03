@@ -13,7 +13,7 @@ import type {
   Message,
   NopeClientOptions,
   OcularOptions,
-  OcularResponse,
+  OcularResponseFor,
   OversightAnalyzeOptions,
   OversightAnalyzeResponseFor,
   OversightIngestOptions,
@@ -44,6 +44,10 @@ const MAX_EVALUATE_MESSAGES = 100;
 /** Server-side cap on /v1/oversight/ingest (ingest.ts:123). */
 const MAX_INGEST_CONVERSATIONS = 300;
 const OVERSIGHT_SEVERITIES: ReadonlySet<string> = new Set(['low', 'medium', 'high', 'critical']);
+const OCULAR_THOROUGHNESS: ReadonlySet<string> = new Set(['fast', 'auto', 'thorough']);
+/** Server-side bounds on /v1/ocular (ocular.ts:63-67). */
+const MAX_TRAJECTORY_STRIDE = 64;
+const MAX_IDENTITY_LENGTH = 256;
 
 /**
  * Validate the messages-or-text input shared by evaluate(), screen() and
@@ -190,51 +194,87 @@ export class NopeClient<Demo extends boolean = false> {
   }
 
   /**
-   * Behavioral risk assessment via Ocular.
+   * Behavioral risk assessment via Ocular ($0.0001 per call).
    *
-   * Returns a continuous `salience` score in [0, 1] plus structural axes —
+   * Returns a continuous `salience` score in [0, 1] plus structural axes:
    * 8 user-risk axes under `signals.user`, 4 AI-behavior axes under
-   * `signals.ai`, an `imminence` axis, and `fiction` / `authenticity`
-   * context modulators. Individual behavioral code identities are not
-   * exposed.
+   * `signals.ai`, an `imminence` axis, and the `fiction` / `authenticity`
+   * context modulators. Individual head identities are not exposed.
    *
-   * Customer code keys decisions off `salience`: pick the cutoff that
-   * fits your action. Reference thresholds (T_WATCH=0.30, T_DANGER=0.60)
-   * match the band view in dashboard.nope.net/ocular.
+   * Pick the `salience` cutoff that fits your action; the reference
+   * thresholds are T_WATCH = 0.30 and T_DANGER = 0.60. Set `per_turn: true`
+   * to receive `trajectory` (per-turn salience and axis scores) and
+   * `trajectory_shape`; without it neither field is present.
+   * `meta.windowed` and `meta.windows` are always present.
    *
-   * Either `messages` or `text` must be provided, but not both.
+   * Demo mode routes to `/v1/try/ocular` (at most 12 messages or 4,000
+   * characters) and returns {@link OcularDemoResponse}, which adds `heads`
+   * and `detail` keyed by public family names.
    *
-   * Currently free (beta). Rate-limited via the standard /v1/* limiter.
+   * @param options.messages - Conversation messages (roles user|assistant)
+   * @param options.text - Plain text input
+   * @param options.thoroughness - 'fast' | 'auto' | 'thorough'
+   * @param options.per_turn - Score every turn and return the trajectory
+   * @param options.trajectory_stride - With per_turn: stride 1..64
+   * @param options.user_id - Opaque id for dashboard analytics (never forwarded to the model)
+   * @param options.session_id - Opaque id for dashboard analytics
+   * @param options.agent_id - Opaque id for dashboard analytics
    *
    * @example
    * ```typescript
    * const result = await client.ocular({
    *   messages: [{ role: 'user', content: 'I feel hopeless' }],
+   *   per_turn: true,
    * });
    * console.log(result.salience, result.subject);
-   * // 0.42 "self"
    * const sui = result.signals.user.suicide;
    * if (sui && sui.score > 0.5) {
-   *   // escalate ...
+   *   // escalate
+   * }
+   * for (const turn of result.trajectory ?? []) {
+   *   console.log(turn.turn, turn.salience, turn.signals_by_axis?.suicide);
    * }
    * ```
    */
-  async ocular(options: OcularOptions): Promise<OcularResponse> {
-    const { messages, text, thoroughness } = options;
+  async ocular(options: OcularOptions): Promise<OcularResponseFor<Demo>> {
+    const { messages, text, thoroughness, per_turn, trajectory_stride, user_id, session_id, agent_id } = options;
+    const payload: Record<string, unknown> = buildTextInput(messages, text);
 
-    if (messages === undefined && text === undefined) {
-      throw new Error("Either 'messages' or 'text' must be provided");
+    if (thoroughness !== undefined) {
+      if (!OCULAR_THOROUGHNESS.has(thoroughness)) {
+        throw new Error('"thoroughness" must be "fast", "auto", or "thorough"');
+      }
+      payload.thoroughness = thoroughness;
     }
-    if (messages !== undefined && text !== undefined) {
-      throw new Error("Only one of 'messages' or 'text' can be provided, not both");
+    if (per_turn !== undefined) {
+      if (typeof per_turn !== 'boolean') throw new Error('"per_turn" must be a boolean');
+      payload.per_turn = per_turn;
+    }
+    if (trajectory_stride !== undefined) {
+      if (
+        !Number.isInteger(trajectory_stride) ||
+        trajectory_stride < 1 ||
+        trajectory_stride > MAX_TRAJECTORY_STRIDE
+      ) {
+        throw new Error(`"trajectory_stride" must be an integer in 1..${MAX_TRAJECTORY_STRIDE}`);
+      }
+      payload.trajectory_stride = trajectory_stride;
+    }
+    const identity: Array<[string, string | undefined]> = [
+      ['user_id', user_id],
+      ['session_id', session_id],
+      ['agent_id', agent_id],
+    ];
+    for (const [key, value] of identity) {
+      if (value === undefined) continue;
+      if (typeof value !== 'string' || value.length === 0 || value.length > MAX_IDENTITY_LENGTH) {
+        throw new Error(`"${key}" must be 1..${MAX_IDENTITY_LENGTH} characters`);
+      }
+      payload[key] = value;
     }
 
-    const payload: Record<string, unknown> = {};
-    if (messages !== undefined) payload.messages = messages;
-    if (text !== undefined) payload.text = text;
-    if (thoroughness !== undefined) payload.thoroughness = thoroughness;
-
-    return this.request<OcularResponse>('POST', '/v1/ocular', payload);
+    const endpoint = this.demo ? '/v1/try/ocular' : '/v1/ocular';
+    return this.request<OcularResponseFor<Demo>>('POST', endpoint, payload);
   }
 
   /**

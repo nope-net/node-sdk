@@ -1216,41 +1216,56 @@ export interface OversightIngestResponse {
   errors?: OversightIngestError[];
 }
 
-// ============================================================================
-// Ocular (behavioral risk assessment — POST /v1/ocular)
-// ============================================================================
-
 // =============================================================================
-// Ocular (behavioral risk assessment — /v1/ocular)
+// Ocular (behavioral risk assessment — POST /v1/ocular)
 // =============================================================================
 //
-// The customer-facing /v1/ocular response models the post-filter surface the
-// gateway emits. Individual head-code identifiers are stripped by the gateway
-// and are not part of the SDK surface.
+// Models the post-filter customer surface the gateway emits. Individual
+// head-code identifiers are stripped upstream; only the demo route exposes
+// them, under public family names.
 
+/** Ensemble depth. `fast` is single-variant; `thorough` populates `stability`. */
 export type OcularThoroughness = 'fast' | 'auto' | 'thorough';
 
-/**
- * Options for client.ocular(). Either `messages` or `text` is required.
- */
+/** Per-axis level. */
+export type OcularLevel = 'critical' | 'high' | 'moderate' | 'low' | 'minimal';
+
+/** Per-turn phase label in `trajectory_shape.phases`. */
+export type OcularPhase = 'baseline' | 'emerging' | 'escalating' | 'de-escalating' | 'crisis';
+
+/** Options for client.ocular(). Either `messages` or `text` is required. */
 export interface OcularOptions {
-  /** Conversation messages. */
+  /** Conversation messages (roles user|assistant). The demo route accepts at most 12. */
   messages?: Message[];
-  /** Plain text input (alternative to messages). */
+
+  /** Plain text input (alternative to messages; demo route caps at 4,000 characters). */
   text?: string;
-  /**
-   * How many ensemble variants to run. `'fast'` is single-variant (lowest
-   * latency), `'thorough'` populates `stability`. Omit for the server default.
-   */
+
+  /** Ensemble depth. Omit for the server default (`auto`). */
   thoroughness?: OcularThoroughness;
+
+  /**
+   * Score every turn and return `trajectory` and `trajectory_shape`. Off by
+   * default; without it the response carries no trajectory.
+   */
+  per_turn?: boolean;
+
+  /** With per_turn: score every Nth turn backward from the last (1..64; server default 3). */
+  trajectory_stride?: number;
+
+  /** Opaque end-user id (1..256 chars) for dashboard analytics. Never forwarded to the model. */
+  user_id?: string;
+
+  /** Opaque session id (1..256 chars) for dashboard analytics. Never forwarded to the model. */
+  session_id?: string;
+
+  /** Opaque agent id (1..256 chars) for dashboard analytics. Never forwarded to the model. */
+  agent_id?: string;
 }
 
-/** Per-axis output — level enum + raw score in [0, 1]. */
+/** Per-axis output: level plus raw score in [0, 1]. */
 export interface OcularAxis {
-  /** One of: minimal | low | moderate | high | critical (imminence may also
-   *  return `not_applicable`). Open string for forward compatibility. */
-  level: string;
-  /** Raw probability in [0, 1]. */
+  level: OcularLevel;
   score: number;
 }
 
@@ -1262,8 +1277,8 @@ export type OcularAxisGroup = Record<string, OcularAxis>;
  * `user` carries 8 axes: suicide, self_harm, harm_to_others, abuse,
  * sexual_violence, exploitation, stalking, self_neglect.
  *
- * `ai` carries 4 axes when assistant turns are present: harm_provision,
- * emotional_failure, manipulation, safeguarding_failure.
+ * `ai` carries 4 axes: harm_provision, emotional_failure, manipulation,
+ * safeguarding_failure.
  */
 export interface OcularSignals {
   user: OcularAxisGroup;
@@ -1272,8 +1287,7 @@ export interface OcularSignals {
 
 /**
  * Per-axis stability in [0, 1] across the variants Ocular ran (higher = more
- * confident). Returned only when the call was multi-variant; otherwise the
- * response carries `stability: null`.
+ * consistent). Present only on multi-variant calls; otherwise `null`.
  */
 export interface OcularStability {
   user: Record<string, number>;
@@ -1281,73 +1295,137 @@ export interface OcularStability {
   imminence: number;
 }
 
-/**
- * Per-turn trajectory entry — minimal surface, no head codes.
- *
- * `salience` is the same continuous score as the top-level field, computed
- * per turn so callers can plot the conversation arc.
- */
+/** Per-turn trajectory entry (only with `per_turn: true`). */
 export interface OcularTrajectoryEntry {
-  role: string;
+  /** Turn index. */
   turn: number;
+
+  /** Speaker of the turn. The customer route passes the upstream value through (API fix A-4 normalises it to user|assistant). */
+  role: string;
+
+  /** Per-turn salience, same cascade as the top-level field. */
   salience: number;
+
+  /**
+   * Per-turn axis scores keyed by the public axis vocabulary: user axes by
+   * bare name (`suicide`), AI axes prefixed (`ai_manipulation`), plus the
+   * `fiction` and `genuine` context scalars. Absent when the turn had none.
+   */
+  signals_by_axis?: Record<string, number>;
 }
 
-/** Response metadata. */
+/**
+ * Arc summary of a per-turn trajectory (only with `per_turn: true`). The
+ * phase, slope and peak fields track the suicide (crisis) axis; `onsets`
+ * spans every axis. Every key is optional; the object is absent when empty.
+ */
+export interface OcularTrajectoryShape {
+  /** axis -> first turn index at which that axis crossed its onset threshold. */
+  onsets?: Record<string, number>;
+
+  /** Per-turn phase labels. */
+  phases?: OcularPhase[];
+
+  /** Per-turn crisis-axis slope (delta versus the previous turn). */
+  slopes?: number[];
+
+  /** Turn index with the highest crisis-axis signal. */
+  peak_turn?: number;
+
+  /** Highest crisis-axis signal across the conversation. */
+  peak_crisis?: number;
+}
+
+/** Response metadata. `windowed` and `windows` are always present (`false`, `1` for unwindowed input). */
 export interface OcularMeta {
   /** Ocular model build identifier. */
   version: string;
-  /** Upstream Ocular inference time (ms). */
+
+  /** Upstream inference time (ms). */
   inference_ms: number;
-  /** Present only when the input was windowed at the gateway. */
+
+  /** Whether the input was split into windows at the gateway. */
   windowed?: boolean;
+
   /** Number of windows the input was split into. */
   windows?: number;
+
   /** True if any window's content was truncated to fit. */
   truncated?: boolean;
-  [key: string]: unknown;
 }
 
 /**
- * Response from POST /v1/ocular.
+ * Response from POST /v1/ocular ($0.0001 per call).
  *
- * Customer code keys decisions off the continuous `salience` score in
- * [0, 1] plus the structural axes under `signals.user.*` (8 axes) and
- * `signals.ai.*` (4 axes). Pick the threshold that fits your downstream
- * action; published guidance uses T_WATCH=0.30 and T_DANGER=0.60 as
- * reference cutoffs (see docs.nope.net/ocular).
- *
- * `subject` ('self' / 'other' / 'unknown') identifies who the speaker-side
- * risk pertains to; `imminence` is a separate axis. `fiction` and
- * `authenticity` are context modulators already factored into `salience`
- * and per-axis levels server-side — surface them for inspection, not for
- * re-aggregation.
- *
- * `stability` is only populated when Ocular produced multiple variants on
- * the call. `trajectory` is present when the input had ≥2 turns; each
- * entry carries the per-turn salience for plotting.
+ * Decisions key off the continuous `salience` score in [0, 1] plus the axes
+ * under `signals.user` (8) and `signals.ai` (4). Reference cutoffs are
+ * T_WATCH = 0.30 and T_DANGER = 0.60 (docs.nope.net/ocular). `fiction` and
+ * `authenticity` are context modulators already factored into `salience`.
+ * `trajectory` and `trajectory_shape` are present only when the request set
+ * `per_turn: true`.
  */
 export interface OcularResponse {
-  /** Continuous severity score in [0, 1]. The customer decision contract. */
+  /** Continuous severity score in [0, 1]. */
   salience: number;
-  /** Who the speaker-side risk pertains to. */
+
+  /** Who the speaker-side risk pertains to ('self', 'other', 'unknown'). */
   subject: string;
-  /** How urgent the concern is (separate axis, not part of `signals`). */
+
+  /** How urgent the concern is (a separate axis). */
   imminence: OcularAxis;
-  /** Roleplay/fiction-framing strength in [0, 1] (informational). */
+
+  /** Roleplay or fiction-framing strength in [0, 1]. */
   fiction: number;
-  /** Authenticity-of-distress signal in [0, 1] (informational). */
+
+  /** Authenticity-of-distress signal in [0, 1]. */
   authenticity: number;
-  /** 8 user-risk axes + 4 AI-behavior axes, each with level + score. */
+
+  /** 8 user-risk axes and 4 AI-behavior axes. */
   signals: OcularSignals;
-  /** Which ensemble depth the call ran at. */
+
+  /** Which ensemble depth ran. */
   thoroughness: OcularThoroughness;
-  /** Aggregate confidence in [0, 1] across the variants produced (null when single-variant). */
+
+  /** Aggregate confidence across variants; null on single-variant calls. */
   confidence: number | null;
-  /** Per-axis stability across variants — null when single-variant. */
+
+  /** Per-axis stability across variants; null on single-variant calls. */
   stability: OcularStability | null;
+
   /** Response metadata. */
   meta: OcularMeta;
-  /** Per-turn salience trail when the input had ≥2 turns. */
+
+  /** Per-turn trail (only with `per_turn: true`). */
   trajectory?: OcularTrajectoryEntry[];
+
+  /** Arc summary of the trail (only with `per_turn: true`). */
+  trajectory_shape?: OcularTrajectoryShape;
 }
+
+/** A screening head on the demo surface, under its public family name. */
+export interface OcularHead {
+  code: string;
+  score: number;
+}
+
+/** Demo per-turn entry; may also carry the turn's screening heads. */
+export interface OcularDemoTrajectoryEntry extends OcularTrajectoryEntry {
+  heads?: OcularHead[];
+}
+
+/**
+ * Response from POST /v1/try/ocular (demo mode). The customer fields plus
+ * screening `heads` and per-head `detail.scores` / `detail.calibrated`,
+ * keyed by public family names such as `USER_SUICIDE_HEAD_A`.
+ */
+export interface OcularDemoResponse extends OcularResponse {
+  heads: OcularHead[];
+  detail: {
+    scores: Record<string, number>;
+    calibrated: Record<string, number>;
+  };
+  trajectory?: OcularDemoTrajectoryEntry[];
+}
+
+/** Response type of ocular() for a client constructed with the given `demo` flag. */
+export type OcularResponseFor<Demo extends boolean> = Demo extends true ? OcularDemoResponse : OcularResponse;
