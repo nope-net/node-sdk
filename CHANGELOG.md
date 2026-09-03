@@ -4,6 +4,44 @@ All notable changes to `@nope-net/sdk`. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the package
 follows [Semantic Versioning](https://semver.org/).
 
+## 4.0.1 - 2026-09-03
+
+### Added
+
+- `NopeError.body`: the response body parsed as a JSON object, next to the
+  raw `responseBody` string. Absent for non-JSON bodies, connection
+  failures and client-side rejections.
+- `VerifiedWebhook.deliveryId`: the `X-NOPE-Delivery-ID` header, which the
+  API sets to the stored delivery's id (repeated on retries). `eventId`
+  stays as a deprecated alias of the same value. `eventType` and
+  `webhookId` are documented on the result, and `Webhook.sign` documents
+  its optional third argument (unix seconds) for signing as of a chosen
+  moment.
+
+### Fixed
+
+- Client-side validation (an empty `messages` array, a role other than
+  `user` or `assistant`, more than 100 messages, neither `messages` nor
+  `text`, and the other per-method checks) and demo-mode refusals throw
+  `NopeValidationError` instead of a plain `Error`, so the documented catch
+  ladder sees them. `statusCode` is undefined, `code` is `invalid_request`
+  or `not_available_in_demo`, `details` is empty, and the messages are
+  unchanged.
+- README and JSDoc corrections, each checked against the API source:
+  `EvaluateResource` is named as the resource type on evaluate results;
+  `urgent: true` is described as a ranking hint (24/7 resources first among
+  ties on relevance and priority tier), not a filter; the `deliveryId`
+  wording replaces the claim that `eventId` equals `payload.event_id`; an
+  errors paragraph says when `code` is present (402 and 429 always, some
+  403 and 503 bodies, never 400, 401, 404 or 413); the `screen()`
+  deprecation names the 2027-01-01 sunset; the Ocular per-turn section
+  states the server default `trajectory_stride` of 3 and how to score every
+  turn, 0-based `turn` values, the `ai_`-prefixed axis keys plus `genuine`
+  and `fiction`, that `peak_turn`, `phases` and `slopes` index the
+  `trajectory` array while `onsets` uses `turn` values, and that the demo
+  route never returns `trajectory_shape`. Every "until API fix A-n deploys"
+  note now states the deployed behaviour.
+
 ## 4.0.0 - 2026-09-03
 
 The types now model the live wire of api.nope.net (captured fixtures under
