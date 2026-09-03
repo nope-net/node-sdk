@@ -280,6 +280,49 @@ describe('error mapping', () => {
     expect(err.statusCode).toBe(200);
   });
 
+  describe('parsed body', () => {
+    it('401 fixture -> body is the parsed JSON object and responseBody the raw text', async () => {
+      const fixtureBody = fixture('401.missing-auth.json');
+      const ff = new FakeFetch(json(401, fixtureBody));
+      const err = (await capture(client(ff).signpostCountries())) as NopeAuthError;
+      expect(err).toBeInstanceOf(NopeAuthError);
+      expect(err.body).toEqual(fixtureBody);
+      expect(err.body?.error).toBe('Missing or invalid Authorization header');
+      expect(err.responseBody).toBe(JSON.stringify(fixtureBody));
+    });
+
+    it('413 fixture -> body keeps error and max_bytes; details holds the extras only', async () => {
+      const fixtureBody = fixture('413.payload-too-large.json');
+      const ff = new FakeFetch(json(413, fixtureBody));
+      const err = (await capture(client(ff).signpostCountries())) as NopeValidationError;
+      expect(err).toBeInstanceOf(NopeValidationError);
+      expect(err.body).toEqual({ error: 'Payload too large', max_bytes: 524288 });
+      expect(err.details).toEqual({ max_bytes: 524288 });
+    });
+
+    it('non-JSON text -> body undefined, responseBody the text', async () => {
+      const ff = new FakeFetch(text(502, 'Bad Gateway'));
+      const err = (await capture(client(ff).signpostCountries())) as NopeServerError;
+      expect(err.body).toBeUndefined();
+      expect(err.responseBody).toBe('Bad Gateway');
+    });
+
+    it('JSON array body -> body undefined (not an object)', async () => {
+      const ff = new FakeFetch(text(500, '[1, 2]'));
+      const err = (await capture(client(ff).signpostCountries())) as NopeServerError;
+      expect(err.body).toBeUndefined();
+      expect(err.responseBody).toBe('[1, 2]');
+    });
+
+    it('client-side rejection -> body and responseBody undefined', async () => {
+      const ff = new FakeFetch();
+      const err = (await capture(client(ff).evaluate({ messages: [] }))) as NopeValidationError;
+      expect(err).toBeInstanceOf(NopeValidationError);
+      expect(err.body).toBeUndefined();
+      expect(err.responseBody).toBeUndefined();
+    });
+  });
+
   it('fetch rejection -> NopeConnectionError with originalError', async () => {
     const boom = new TypeError('fetch failed');
     const ff = new FakeFetch(boom);

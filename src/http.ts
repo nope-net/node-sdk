@@ -134,7 +134,7 @@ export function mapErrorResponse(status: number, statusText: string, headers: He
     (typeof body?.message === 'string' ? body.message : undefined) ??
     errorField ??
     (text || statusText || `HTTP ${status}`);
-  const base = { code, responseBody: text };
+  const base = { code, responseBody: text, body };
 
   switch (status) {
     case 400:

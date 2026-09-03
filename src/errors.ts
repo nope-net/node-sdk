@@ -5,8 +5,9 @@
  * failures and for requests the SDK rejected before sending), `code` (the
  * API's machine string when the body's `error` field looks like one, e.g.
  * `insufficient_balance`; `invalid_request` or `not_available_in_demo` for
- * client-side rejections), `message` (the API's human sentence when present)
- * and `responseBody` (the raw response text).
+ * client-side rejections), `message` (the API's human sentence when present),
+ * `responseBody` (the raw response text) and `body` (the parsed JSON object
+ * when the response was one).
  */
 
 /**
@@ -28,6 +29,8 @@ export interface NopeErrorOptions {
   code?: string;
   /** Raw response body text. */
   responseBody?: string;
+  /** Parsed response body, when the text was a JSON object. */
+  body?: ApiErrorBody;
 }
 
 /**
@@ -36,7 +39,14 @@ export interface NopeErrorOptions {
 export class NopeError extends Error {
   readonly statusCode?: number;
   readonly code?: string;
+  /** Raw response body text. Absent when no response was received. */
   readonly responseBody?: string;
+  /**
+   * The response body parsed as JSON, when it was a JSON object. Absent for
+   * non-JSON bodies, for connection failures and for client-side
+   * rejections. `responseBody` keeps the raw text either way.
+   */
+  readonly body?: ApiErrorBody;
 
   constructor(message: string, options: NopeErrorOptions = {}) {
     super(message);
@@ -44,6 +54,7 @@ export class NopeError extends Error {
     this.statusCode = options.statusCode;
     this.code = options.code;
     this.responseBody = options.responseBody;
+    this.body = options.body;
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, new.target);
     }
