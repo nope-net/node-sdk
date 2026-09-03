@@ -1,129 +1,217 @@
 /**
- * Webhook Utilities
+ * Webhook verification and payload types.
  *
- * Verify incoming webhook signatures and parse payloads.
+ * NOPE signs every delivery with HMAC-SHA256 over `"${timestamp}.${body}"`
+ * where `body` is the exact bytes it sent (JSON.stringify of the payload),
+ * and sets these headers:
+ *
+ *   X-NOPE-Signature:   sha256=<hex>
+ *   X-NOPE-Timestamp:   <unix seconds>
+ *   X-NOPE-Event:       evaluate.alert | oversight.alert | oversight.ingestion.complete | test.ping
+ *   X-NOPE-Delivery-ID: evt_<32 hex>
+ *   X-NOPE-Webhook-ID:  <webhook id>
+ *
+ * Pass the raw request body (string or bytes) to `verify` / `verifyRequest`.
+ * Passing an already-parsed object also works (the SDK re-serialises it with
+ * JSON.stringify), but only when your JSON parser preserved key order, so the
+ * raw body is the supported input.
  *
  * @example
  * ```typescript
- * import { Webhook, WebhookPayload } from '@nope-net/sdk';
+ * import { Webhook, WebhookSignatureError } from '@nope-net/sdk';
  *
- * app.post('/webhooks/nope', (req, res) => {
+ * app.post('/webhooks/nope', express.raw({ type: 'application/json' }), (req, res) => {
  *   try {
- *     const event = Webhook.verify(
- *       req.body,
- *       req.headers['x-nope-signature'] as string,
- *       req.headers['x-nope-timestamp'] as string,
- *       process.env.NOPE_WEBHOOK_SECRET!
- *     );
- *
- *     console.log(`Received ${event.event}: ${event.risk_summary.overall_severity}`);
+ *     const { payload } = Webhook.verifyRequest(req.body, req.headers, process.env.NOPE_WEBHOOK_SECRET!);
+ *     if (payload.event === 'evaluate.alert') {
+ *       console.log(payload.risk_summary.overall_severity);
+ *     }
  *     res.status(200).send('OK');
  *   } catch (err) {
- *     console.error('Webhook verification failed:', err);
- *     res.status(401).send('Invalid signature');
+ *     if (err instanceof WebhookSignatureError) res.status(401).send('Invalid signature');
+ *     else throw err;
  *   }
  * });
  * ```
  */
 
-import { createHmac, timingSafeEqual } from 'crypto';
-import type { Severity, Imminence } from './types.js';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import type { Severity, Imminence, ConcernLevel, Trajectory } from './types.js';
 
 // =============================================================================
-// Webhook Types
+// Payload types (copied field-for-field from api/lib/webhooks/types.ts)
 // =============================================================================
 
-/** Webhook event types */
-export type WebhookEventType = 'risk.elevated' | 'risk.critical' | 'test.ping';
+/** Webhook event types. */
+export type WebhookEventType = 'evaluate.alert' | 'oversight.alert' | 'oversight.ingestion.complete' | 'test.ping';
 
-/** Risk level thresholds for webhook configuration */
+/** Risk level threshold for webhook filtering (`min_risk_level`). */
 export type WebhookRiskLevel = 'none' | 'low' | 'medium' | 'high' | 'critical';
 
-/** Risk summary in webhook payload */
+/** Risk summary on an evaluate.alert payload. */
 export interface WebhookRiskSummary {
   overall_severity: Severity;
   overall_imminence: Imminence;
+  /** Risk type of the highest self-directed risk, or 'none'. */
   primary_domain: string;
   confidence: number;
-  primary_concerns: string;
+  /**
+   * Narrative of the key concerns. Declared as a string by the API; the
+   * builder copies the classifier's value through, which has been seen as an
+   * array of strings on the wire.
+   */
+  primary_concerns: string | string[];
 }
 
-/** Domain assessment in webhook payload */
+/** Per-risk assessment on an evaluate.alert payload. */
 export interface WebhookDomainAssessment {
   domain: string;
   severity: Severity;
   imminence: Imminence;
 }
 
-/** Legal/safeguarding flags in webhook payload */
+/** Safeguarding flags on an evaluate.alert payload. */
 export interface WebhookFlags {
   intimate_partner_violence: string | null;
   child_safeguarding: string | null;
   third_party_threat: boolean;
 }
 
-/** Resource reference in webhook payload */
+/** A resource that was included in the API response. */
 export interface WebhookResourceProvided {
   name: string;
   type: string;
   country: string;
 }
 
-/** Conversation info in webhook payload */
+/** Conversation content (only when the webhook has include_conversation). */
 export interface WebhookConversation {
   included: boolean;
   message_count?: number;
+  /** Latest user message, truncated to 1,000 characters. */
   latest_user_message?: string;
   truncated?: boolean;
 }
 
-/**
- * Webhook payload received from NOPE
- *
- * This is the body of the POST request sent to your webhook endpoint.
- */
-export interface WebhookPayload {
-  /** Event type: risk.elevated, risk.critical, or test.ping */
+/** Fields shared by every event. */
+export interface WebhookPayloadBase {
+  /** Event type. */
   event: WebhookEventType;
 
-  /** Unique event ID for idempotency */
+  /** Unique event id for idempotency (also sent as X-NOPE-Delivery-ID). */
   event_id: string;
 
-  /** ISO 8601 timestamp when event was created */
+  /** ISO 8601 creation time. */
   timestamp: string;
 
-  /** API version for payload format */
+  /** Payload format version. */
   api_version: '2025-01';
+}
 
-  /** Your conversation_id (if provided in evaluate request) */
+/** Sent when /v1/evaluate detects risk at or above the webhook's min_risk_level. */
+export interface EvaluateAlertPayload extends WebhookPayloadBase {
+  event: 'evaluate.alert';
+
+  /** Your conversation_id from the evaluate request, if any. */
   conversation_id?: string;
 
-  /** Your end_user_id (if provided in evaluate request) */
+  /** Your end_user_id from the evaluate request, if any. */
   user_id?: string;
 
-  /** Risk assessment summary */
   risk_summary: WebhookRiskSummary;
 
-  /** Per-domain risk assessments */
+  /** Per-domain assessments. */
   domains: WebhookDomainAssessment[];
 
-  /** Legal/safeguarding flags */
   flags: WebhookFlags;
 
-  /** Crisis resources that were provided */
+  /** Resources that were provided in the API response. */
   resources_provided: WebhookResourceProvided[];
 
-  /** Conversation content (if include_conversation enabled) */
   conversation: WebhookConversation;
 }
+
+/** A behavior on an oversight.alert payload (up to 5). */
+export interface OversightAlertBehavior {
+  code: string;
+  name: string;
+  severity: string;
+  category: string;
+}
+
+/** Sent when Oversight (analyze or ingest) finds high or critical concern. */
+export interface OversightAlertPayload extends WebhookPayloadBase {
+  event: 'oversight.alert';
+
+  conversation_id: string;
+
+  /** Concern level that triggered the alert. */
+  concern: 'high' | 'critical';
+
+  trajectory: Trajectory;
+
+  /** Human-readable summary of the analysis. */
+  summary: string;
+
+  /** Top behaviors detected (up to 5). */
+  behaviors: OversightAlertBehavior[];
+
+  /** Agent ids involved in the conversation. */
+  agent_ids?: string[];
+
+  /** Platform from the conversation metadata. */
+  platform?: string;
+
+  user_is_minor: boolean;
+
+  /** Conversation content (only when the webhook has include_conversation). */
+  conversation?: WebhookConversation;
+}
+
+/** Sent when an ingest batch finishes. */
+export interface OversightIngestionCompletePayload extends WebhookPayloadBase {
+  event: 'oversight.ingestion.complete';
+
+  ingestion_id: string;
+
+  conversations_total: number;
+
+  conversations_processed: number;
+
+  conversations_failed: number;
+
+  /** Count of conversations at each concern level. */
+  concerns: Record<ConcernLevel, number>;
+
+  /** Top behaviors across the batch. */
+  top_behaviors: Array<{
+    code: string;
+    name: string;
+    occurrence_count: number;
+  }>;
+
+  processing_time_ms: number;
+}
+
+/** Sent by the dashboard "test" button and by client.webhooks.test(). */
+export interface TestPingPayload extends WebhookPayloadBase {
+  event: 'test.ping';
+
+  message: string;
+}
+
+/** Every webhook payload, discriminated on `event`. */
+export type WebhookPayload =
+  | EvaluateAlertPayload
+  | OversightAlertPayload
+  | OversightIngestionCompletePayload
+  | TestPingPayload;
 
 // =============================================================================
 // Errors
 // =============================================================================
 
-/**
- * Error thrown when webhook signature verification fails
- */
+/** Thrown when signature verification fails or the timestamp is out of range. */
 export class WebhookSignatureError extends Error {
   constructor(message: string) {
     super(message);
@@ -132,141 +220,157 @@ export class WebhookSignatureError extends Error {
 }
 
 // =============================================================================
-// Webhook Verification
+// Verification
 // =============================================================================
 
 export interface WebhookVerifyOptions {
   /**
-   * Maximum age of timestamp in seconds (default: 300 = 5 minutes)
-   *
-   * Set to 0 to disable timestamp checking (not recommended).
+   * Maximum age of the timestamp in seconds, in either direction (default
+   * 300). Set to 0 to disable the check (not recommended).
    */
   maxAgeSeconds?: number;
 }
 
+/** Raw body (string or bytes, preferred) or an already-parsed object. */
+export type WebhookBody = string | Uint8Array | object;
+
+/** Node's IncomingHttpHeaders, a fetch Headers instance, or any header map. */
+export type WebhookHeaders =
+  | { get(name: string): string | null }
+  | Record<string, string | string[] | undefined>;
+
+/** Result of verifyRequest. */
+export interface VerifiedWebhook {
+  /** The verified, parsed payload. */
+  payload: WebhookPayload;
+  /** X-NOPE-Delivery-ID (equals payload.event_id). Use it to deduplicate retries. */
+  eventId?: string;
+  /** X-NOPE-Webhook-ID. */
+  webhookId?: string;
+  /** X-NOPE-Event. */
+  eventType?: string;
+}
+
+const DEFAULT_MAX_AGE_SECONDS = 300;
+
+function toBytes(body: WebhookBody): Buffer {
+  if (typeof body === 'string') return Buffer.from(body, 'utf8');
+  if (body instanceof Uint8Array) return Buffer.from(body);
+  return Buffer.from(JSON.stringify(body), 'utf8');
+}
+
+function computeSignature(secret: string, timestamp: string, bodyBytes: Buffer): string {
+  return createHmac('sha256', secret).update(`${timestamp}.`).update(bodyBytes).digest('hex');
+}
+
+function readHeader(headers: WebhookHeaders, name: string): string | undefined {
+  if (typeof (headers as { get?: unknown }).get === 'function') {
+    return (headers as { get(name: string): string | null }).get(name) ?? undefined;
+  }
+  const map = headers as Record<string, string | string[] | undefined>;
+  const key = Object.keys(map).find((k) => k.toLowerCase() === name);
+  const value = key === undefined ? undefined : map[key];
+  return Array.isArray(value) ? value[0] : value;
+}
+
 /**
- * Webhook verification and parsing utilities
+ * Webhook verification and signing.
  */
 export const Webhook = {
   /**
-   * Verify webhook signature and parse payload
+   * Verify a delivery and return its parsed payload.
    *
-   * @param payload - Raw request body (string or object)
+   * @param payload - Raw request body (string or bytes, preferred) or the parsed object
    * @param signature - X-NOPE-Signature header value
-   * @param timestamp - X-NOPE-Timestamp header value
-   * @param secret - Your webhook signing secret
-   * @param options - Verification options
-   * @returns Parsed and verified WebhookPayload
-   * @throws WebhookSignatureError if verification fails
-   *
-   * @example
-   * ```typescript
-   * const event = Webhook.verify(
-   *   req.body,
-   *   req.headers['x-nope-signature'],
-   *   req.headers['x-nope-timestamp'],
-   *   secret
-   * );
-   * ```
+   * @param timestamp - X-NOPE-Timestamp header value (unix seconds)
+   * @param secret - Your webhook signing secret (`whsec_...`)
+   * @param options - `maxAgeSeconds` (default 300; 0 disables)
+   * @throws WebhookSignatureError when a header is missing, the timestamp is out of range, or the signature does not match
    */
   verify(
-    payload: string | object,
+    payload: WebhookBody,
     signature: string | undefined,
     timestamp: string | undefined,
     secret: string,
     options: WebhookVerifyOptions = {}
   ): WebhookPayload {
-    const { maxAgeSeconds = 300 } = options;
+    const { maxAgeSeconds = DEFAULT_MAX_AGE_SECONDS } = options;
 
-    // Validate inputs
-    if (!signature) {
-      throw new WebhookSignatureError('Missing X-NOPE-Signature header');
-    }
-    if (!timestamp) {
-      throw new WebhookSignatureError('Missing X-NOPE-Timestamp header');
-    }
-    if (!secret) {
-      throw new WebhookSignatureError('Webhook secret is required');
-    }
+    if (!signature) throw new WebhookSignatureError('Missing X-NOPE-Signature header');
+    if (!timestamp) throw new WebhookSignatureError('Missing X-NOPE-Timestamp header');
+    if (!secret) throw new WebhookSignatureError('Webhook secret is required');
 
-    // Parse timestamp
-    const timestampNum = parseInt(timestamp, 10);
-    if (isNaN(timestampNum)) {
-      throw new WebhookSignatureError('Invalid timestamp format');
-    }
+    const timestampNum = Number.parseInt(timestamp, 10);
+    if (Number.isNaN(timestampNum)) throw new WebhookSignatureError('Invalid timestamp format');
 
-    // Check timestamp freshness
     if (maxAgeSeconds > 0) {
-      const now = Math.floor(Date.now() / 1000);
-      const age = now - timestampNum;
-
+      const age = Math.floor(Date.now() / 1000) - timestampNum;
       if (age > maxAgeSeconds) {
-        throw new WebhookSignatureError(
-          `Timestamp too old: ${age}s ago (max: ${maxAgeSeconds}s)`
-        );
+        throw new WebhookSignatureError(`Timestamp too old: ${age}s ago (max: ${maxAgeSeconds}s)`);
       }
       if (age < -maxAgeSeconds) {
-        throw new WebhookSignatureError(
-          `Timestamp too far in future: ${-age}s ahead (max: ${maxAgeSeconds}s)`
-        );
+        throw new WebhookSignatureError(`Timestamp too far in future: ${-age}s ahead (max: ${maxAgeSeconds}s)`);
       }
     }
 
-    // Stringify payload if object
-    const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    const bodyBytes = toBytes(payload);
+    const expected = Buffer.from(computeSignature(secret, timestamp, bodyBytes));
+    const received = Buffer.from(signature.replace(/^sha256=/, ''));
+    const valid = expected.length === received.length && timingSafeEqual(expected, received);
+    if (!valid) throw new WebhookSignatureError('Signature verification failed');
 
-    // Compute expected signature
-    const message = `${timestamp}.${payloadString}`;
-    const expected = createHmac('sha256', secret).update(message).digest('hex');
-
-    // Extract signature value (remove sha256= prefix if present)
-    const received = signature.replace(/^sha256=/, '');
-
-    // Constant-time comparison; timingSafeEqual throws when lengths differ.
-    let isValid: boolean;
-    try {
-      isValid = timingSafeEqual(Buffer.from(expected), Buffer.from(received));
-    } catch {
-      isValid = false;
+    if (typeof payload === 'string' || payload instanceof Uint8Array) {
+      return JSON.parse(bodyBytes.toString('utf8')) as WebhookPayload;
     }
-
-    if (!isValid) {
-      throw new WebhookSignatureError('Signature verification failed');
-    }
-
-    // Parse and return payload
-    const parsed: WebhookPayload =
-      typeof payload === 'string' ? JSON.parse(payload) : payload;
-
-    return parsed;
+    return payload as WebhookPayload;
   },
 
   /**
-   * Generate a signature for testing purposes
+   * Verify a delivery from its raw body and request headers.
    *
-   * @param payload - Payload to sign (string or object)
-   * @param secret - Signing secret
-   * @param timestamp - Unix timestamp in seconds (defaults to now)
-   * @returns Object with signature and timestamp
+   * Reads `x-nope-signature` and `x-nope-timestamp` (case-insensitive) from
+   * a Node `IncomingHttpHeaders` object, a fetch `Headers` instance, or any
+   * plain map, and returns the payload with the delivery and webhook ids.
    *
-   * @example
-   * ```typescript
-   * const { signature, timestamp } = Webhook.sign(payload, secret);
-   * ```
+   * @param body - Raw request body (string or bytes, preferred) or the parsed object
+   * @param headers - Request headers
+   * @param secret - Your webhook signing secret
+   * @param options - `maxAgeSeconds` (default 300; 0 disables)
    */
-  sign(
-    payload: string | object,
+  verifyRequest(
+    body: WebhookBody,
+    headers: WebhookHeaders,
     secret: string,
-    timestamp?: number
-  ): { signature: string; timestamp: string } {
-    const ts = timestamp ?? Math.floor(Date.now() / 1000);
-    const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    const message = `${ts}.${payloadString}`;
-    const sig = createHmac('sha256', secret).update(message).digest('hex');
-
+    options: WebhookVerifyOptions = {}
+  ): VerifiedWebhook {
+    const payload = Webhook.verify(
+      body,
+      readHeader(headers, 'x-nope-signature'),
+      readHeader(headers, 'x-nope-timestamp'),
+      secret,
+      options
+    );
     return {
-      signature: `sha256=${sig}`,
-      timestamp: String(ts),
+      payload,
+      eventId: readHeader(headers, 'x-nope-delivery-id'),
+      webhookId: readHeader(headers, 'x-nope-webhook-id'),
+      eventType: readHeader(headers, 'x-nope-event'),
+    };
+  },
+
+  /**
+   * Sign a body the way the API does (for tests and local replay).
+   *
+   * @param payload - Body to sign: a string or bytes as-is, or an object serialised with JSON.stringify
+   * @param secret - Signing secret
+   * @param timestamp - Unix seconds (defaults to now)
+   * @returns `signature` (`sha256=<hex>`) and `timestamp` as strings
+   */
+  sign(payload: WebhookBody, secret: string, timestamp?: number): { signature: string; timestamp: string } {
+    const ts = String(timestamp ?? Math.floor(Date.now() / 1000));
+    return {
+      signature: `sha256=${computeSignature(secret, ts, toBytes(payload))}`,
+      timestamp: ts,
     };
   },
 };
