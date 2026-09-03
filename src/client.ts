@@ -7,7 +7,9 @@
 import { warnOnce } from './deprecation.js';
 import { Transport, type ResponseMeta } from './http.js';
 import type {
+  DetectCountryOptions,
   DetectCountryResponse,
+  DetectCountryResult,
   EvaluateOptions,
   EvaluateResponse,
   Message,
@@ -27,11 +29,13 @@ import type {
   ScreenOptions,
   ScreenResponse,
   SignpostByIdResponse,
+  SignpostConfig,
   SignpostCountriesResponse,
   SignpostOptions,
   SignpostResponse,
   SignpostSearchOptions,
   SignpostSearchResponse,
+  SignpostSmartConfig,
   SignpostSmartOptions,
   SignpostSmartResponse,
 } from './types.js';
@@ -48,6 +52,31 @@ const OCULAR_THOROUGHNESS: ReadonlySet<string> = new Set(['fast', 'auto', 'thoro
 /** Server-side bounds on /v1/ocular (ocular.ts:63-67). */
 const MAX_TRAJECTORY_STRIDE = 64;
 const MAX_IDENTITY_LENGTH = 256;
+
+type SignpostQuery = Record<string, string | number | boolean | undefined>;
+
+/** Merge top-level filters over `config` (top level wins) and serialise them. */
+function mergeSignpostFilters(config: SignpostConfig | undefined, top: SignpostConfig): SignpostQuery {
+  const merged: SignpostConfig = { ...(config ?? {}) };
+  for (const key of ['scopes', 'populations', 'subdivisions', 'limit', 'urgent'] as const) {
+    if (top[key] !== undefined) (merged as Record<string, unknown>)[key] = top[key];
+  }
+  return {
+    scopes: merged.scopes?.length ? merged.scopes.join(',') : undefined,
+    populations: merged.populations?.length ? merged.populations.join(',') : undefined,
+    subdivisions: merged.subdivisions?.length ? merged.subdivisions.map((s) => s.toUpperCase()).join(',') : undefined,
+    limit: merged.limit,
+    urgent: merged.urgent ? 'true' : undefined,
+  };
+}
+
+function smartFilters(config: SignpostSmartConfig | undefined): SignpostQuery {
+  return {
+    scopes: config?.scopes?.length ? config.scopes.join(',') : undefined,
+    populations: config?.populations?.length ? config.populations.join(',') : undefined,
+    limit: config?.limit,
+  };
+}
 
 /**
  * Validate the messages-or-text input shared by evaluate(), screen() and
@@ -488,346 +517,210 @@ export class NopeClient<Demo extends boolean = false> {
   };
 
   // ===========================================================================
-  // Signpost Methods (canonical crisis resources endpoints)
+  // Signpost (crisis resources)
   // ===========================================================================
 
   /**
-   * Get crisis resources for a country.
+   * Crisis resources for a country (free, no model call; API key required).
    *
-   * This is the basic lookup endpoint (free, no LLM). For AI-ranked results,
-   * use `signpostSmart()` instead.
+   * Filters may be passed at the top level or under `config`; a top-level
+   * value wins. Arrays are sent comma-joined. Scope and population values
+   * come from the generated {@link ServiceScope} and {@link Population}
+   * vocabularies (the API returns 400 for unknown values). Not available in
+   * demo mode.
    *
-   * @param options - Signpost options
-   * @param options.country - ISO country code (e.g., "US", "GB")
-   * @param options.config - Optional filtering configuration (scopes, populations, limit, urgent)
-   *
-   * @returns SignpostResponse with crisis resources for the country
-   *
-   * @throws {NopeAuthError} Invalid or missing API key
-   * @throws {NopeValidationError} Invalid request payload
-   * @throws {NopeRateLimitError} Rate limit exceeded
-   * @throws {NopeServerError} Server error
-   * @throws {NopeConnectionError} Connection failed
+   * @param options.country - ISO 3166-1 alpha-2 code (e.g. 'US', 'GB')
+   * @param options.scopes - e.g. ['suicide', 'domestic_violence']
+   * @param options.populations - e.g. ['youth', 'veterans']
+   * @param options.subdivisions - e.g. ['GB-NIR']
+   * @param options.limit - Server cap 10
+   * @param options.urgent - Only 24/7 urgent resources
    *
    * @example
    * ```typescript
-   * const result = await client.signpost({ country: 'US' });
+   * const result = await client.signpost({ country: 'GB', scopes: ['suicide'], urgent: true });
    * for (const resource of result.resources) {
-   *   console.log(`${resource.name}: ${resource.phone}`);
+   *   console.log(`${resource.name}: ${resource.phone ?? resource.website_url}`);
    * }
-   *
-   * // With filtering
-   * const filtered = await client.signpost({
-   *   country: 'US',
-   *   config: { scopes: ['suicide_prevention'], urgent: true }
-   * });
    * ```
    */
   async signpost(options: SignpostOptions): Promise<SignpostResponse> {
-    const { country, config } = options;
-
-    // Build query string
-    const params = new URLSearchParams();
-    params.set('country', country.toUpperCase());
-
-    if (config) {
-      if (config.scopes?.length) {
-        params.set('scopes', config.scopes.join(','));
-      }
-      if (config.populations?.length) {
-        params.set('populations', config.populations.join(','));
-      }
-      if (config.limit !== undefined) {
-        params.set('limit', config.limit.toString());
-      }
-      if (config.urgent) {
-        params.set('urgent', 'true');
-      }
-    }
-
-    return this.requestGet<SignpostResponse>(`/v1/signpost?${params.toString()}`);
+    this.requireNotDemo('signpost()');
+    const { country, config, ...top } = options;
+    const filters = mergeSignpostFilters(config, top);
+    return this.transport.request<SignpostResponse>('GET', '/v1/signpost', {
+      query: { country: country.toUpperCase(), ...filters },
+    });
   }
 
   /**
-   * Get AI-ranked crisis resources based on a semantic query.
+   * Crisis resources ranked for a described situation ($0.001 per call).
    *
-   * Uses LLM ranking to find the most relevant crisis resources. Costs $0.001 per call.
+   * A model ranks the country's candidate pool against `query` and returns
+   * up to 5 picks, each with a one-line `why`. Demo mode routes to
+   * `/v1/try/signpost/smart` (no key, per-IP rate limit).
    *
-   * @param options - Smart signpost options
-   * @param options.country - ISO country code (e.g., "US", "GB")
-   * @param options.query - Natural language query (max 500 chars)
-   * @param options.config - Optional filtering configuration (scopes, populations, limit)
-   *
-   * @returns SignpostSmartResponse with resources ranked by relevance
-   *
-   * @throws {NopeAuthError} Invalid or missing API key
-   * @throws {NopeValidationError} Invalid request payload
-   * @throws {NopeRateLimitError} Rate limit exceeded
-   * @throws {NopeServerError} Server error
-   * @throws {NopeConnectionError} Connection failed
+   * @param options.country - ISO 3166-1 alpha-2 code
+   * @param options.query - Natural-language description (max 500 characters)
+   * @param options.config - `scopes`, `populations`, `limit`
    *
    * @example
    * ```typescript
    * const result = await client.signpostSmart({
    *   country: 'US',
-   *   query: 'teen struggling with eating disorder'
+   *   query: 'teen struggling with an eating disorder'
    * });
-   * for (const ranked of result.ranked) {
-   *   console.log(`${ranked.resource.name} (score: ${ranked.score})`);
-   *   console.log(`  ${ranked.reasoning}`);
+   * for (const pick of result.ranked) {
+   *   console.log(`${pick.rank}. ${pick.resource.name}: ${pick.why}`);
    * }
    * ```
    */
   async signpostSmart(options: SignpostSmartOptions): Promise<SignpostSmartResponse> {
     const { country, query, config } = options;
-
-    // Build query string
-    const params = new URLSearchParams();
-    params.set('country', country.toUpperCase());
-    params.set('query', query);
-
-    if (config) {
-      if (config.scopes?.length) {
-        params.set('scopes', config.scopes.join(','));
-      }
-      if (config.populations?.length) {
-        params.set('populations', config.populations.join(','));
-      }
-      if (config.limit !== undefined) {
-        params.set('limit', config.limit.toString());
-      }
-    }
-
     const endpoint = this.demo ? '/v1/try/signpost/smart' : '/v1/signpost/smart';
-    return this.requestGet<SignpostSmartResponse>(`${endpoint}?${params.toString()}`);
+    return this.transport.request<SignpostSmartResponse>('GET', endpoint, {
+      query: { country: country.toUpperCase(), query, ...smartFilters(config) },
+    });
   }
 
   /**
-   * Semantic search across all crisis resources using vector embeddings.
+   * Semantic search across the whole resource directory (free; API key
+   * required). Uses pre-computed embeddings rather than model ranking and is
+   * not country-scoped unless `country` is given. Results are raw directory
+   * rows ({@link SignpostSearchResult}) and carry the database `id`. Not
+   * available in demo mode.
    *
-   * Unlike `signpostSmart()` (which uses LLM ranking and is country-scoped),
-   * this uses pre-computed embeddings for fast semantic search across the
-   * entire resource database. Free; requires an API key.
-   *
-   * @param options - Search options
-   * @param options.query - Natural language query (max 500 chars)
-   * @param options.country - Optional ISO country code to filter results
+   * @param options.query - Natural-language query (max 500 characters)
+   * @param options.country - Optional ISO 3166-1 alpha-2 filter
    * @param options.limit - Max results (default 10, max 50)
    * @param options.threshold - Similarity threshold in [0, 1] (default 0.3)
    *
-   * @returns SignpostSearchResponse with results ranked by similarity
-   *
-   * @throws {NopeAuthError} Invalid or missing API key
-   * @throws {NopeValidationError} Invalid request payload
-   * @throws {NopeRateLimitError} Rate limit exceeded
-   * @throws {NopeServerError} Server error
-   * @throws {NopeConnectionError} Connection failed
-   *
    * @example
    * ```typescript
-   * const result = await client.signpostSearch({
-   *   query: 'lgbtq support for black community',
-   *   country: 'US',
-   * });
-   * for (const r of result.results) {
-   *   console.log(`${r.name} (similarity: ${r.similarity})`);
+   * const hits = await client.signpostSearch({ query: 'lgbtq youth support', country: 'GB' });
+   * for (const hit of hits.results) {
+   *   console.log(`${hit.name} (${hit.similarity.toFixed(2)}): ${hit.phone ?? hit.website_url}`);
    * }
    * ```
    */
   async signpostSearch(options: SignpostSearchOptions): Promise<SignpostSearchResponse> {
+    this.requireNotDemo('signpostSearch()');
     const { query, country, limit, threshold } = options;
-
     if (!query) {
       throw new Error('"query" is required');
     }
-
-    const params = new URLSearchParams();
-    params.set('query', query);
-
-    if (country) {
-      params.set('country', country.toUpperCase());
-    }
-    if (limit !== undefined) {
-      params.set('limit', limit.toString());
-    }
-    if (threshold !== undefined) {
-      params.set('threshold', threshold.toString());
-    }
-
-    return this.requestGet<SignpostSearchResponse>(`/v1/signpost/search?${params.toString()}`);
+    return this.transport.request<SignpostSearchResponse>('GET', '/v1/signpost/search', {
+      query: { query, country: country?.toUpperCase(), limit, threshold },
+    });
   }
 
   /**
-   * Get a single crisis resource by its database ID.
+   * One crisis resource by database id (public, no key). Ids come from
+   * signpostSearch() results.
    *
-   * This is a public endpoint (no auth required).
-   *
-   * @param resourceId - UUID of the resource
-   *
-   * @returns SignpostByIdResponse with the crisis resource
-   *
-   * @throws {NopeValidationError} Invalid resource ID format
-   * @throws {NopeServerError} Server error
-   * @throws {NopeConnectionError} Connection failed
-   *
-   * @example
-   * ```typescript
-   * const result = await client.signpostById('550e8400-e29b-41d4-a716-446655440000');
-   * console.log(`${result.resource.name}: ${result.resource.phone}`);
-   * ```
+   * @throws {NopeValidationError} Malformed id (400)
+   * @throws {NopeNotFoundError} Unknown id (404)
    */
   async signpostById(resourceId: string): Promise<SignpostByIdResponse> {
-    return this.requestGet<SignpostByIdResponse>(`/v1/signpost/${resourceId}`);
+    return this.transport.request<SignpostByIdResponse>('GET', `/v1/signpost/${encodeURIComponent(resourceId)}`);
   }
 
   /**
-   * List all countries with available crisis resources.
-   *
-   * This is a public endpoint (no auth required).
-   *
-   * @returns SignpostCountriesResponse with list of supported country codes
-   *
-   * @throws {NopeServerError} Server error
-   * @throws {NopeConnectionError} Connection failed
+   * Country codes with crisis resources (public, no key).
    *
    * @example
    * ```typescript
-   * const result = await client.signpostCountries();
-   * console.log(`Supported countries: ${result.countries.join(', ')}`);
+   * const { countries, count } = await client.signpostCountries();
+   * console.log(`${count} countries, starting ${countries[0]}`);
    * ```
    */
   async signpostCountries(): Promise<SignpostCountriesResponse> {
-    return this.requestGet<SignpostCountriesResponse>('/v1/signpost/countries');
+    return this.transport.request<SignpostCountriesResponse>('GET', '/v1/signpost/countries');
   }
 
   /**
-   * Detect user's country from request headers.
+   * Country detection from geo headers (public, no key).
    *
-   * Uses geo headers (Cloudflare, Netlify) to determine country.
-   * This is a public endpoint (no auth required).
-   *
-   * @returns DetectCountryResponse with detected country code and name
-   *
-   * @throws {NopeServerError} Server error
-   * @throws {NopeConnectionError} Connection failed
+   * Works only behind a proxy that injects a geo header (Cloudflare's
+   * `cf-ipcountry`, Vercel's `x-vercel-ip-country`, or `x-country`). Called
+   * directly against api.nope.net it returns the miss shape with
+   * `detected: false`. Pass `countryHint` to send `x-country` yourself.
    *
    * @example
    * ```typescript
-   * const result = await client.detectCountry();
-   * if (result.country_code) {
-   *   console.log(`Detected: ${result.country_name} (${result.country_code})`);
-   * } else {
-   *   console.log('Could not detect country');
-   * }
+   * const geo = await client.detectCountry();
+   * const country = geo.detected ? geo.country_code : 'US';
    * ```
    */
-  async detectCountry(): Promise<DetectCountryResponse> {
-    return this.requestGet<DetectCountryResponse>('/v1/signpost/detect-country');
+  async detectCountry(options: DetectCountryOptions = {}): Promise<DetectCountryResult> {
+    const headers: Record<string, string> = {};
+    if (options.countryHint) headers['x-country'] = options.countryHint.toUpperCase();
+    const body = await this.transport.request<DetectCountryResponse>('GET', '/v1/signpost/detect-country', { headers });
+    return { ...body, detected: body.country_code !== '' };
   }
 
   // ===========================================================================
-  // Deprecated Resources Methods (use signpost* methods instead)
+  // Deprecated /v1/resources/* twins (sunset 2027-01-01; use signpost*)
   // ===========================================================================
 
   /**
-   * Get crisis resources for a country.
-   *
-   * @deprecated Use `signpost()` instead. This method calls the deprecated `/v1/resources` endpoint.
-   *
-   * @param options - Resources options
-   * @param options.country - ISO country code (e.g., "US", "GB")
-   * @param options.config - Optional filtering configuration
-   *
-   * @returns ResourcesResponse with crisis resources for the country
+   * @deprecated Use signpost(). Calls /v1/resources, which the API serves
+   * with Deprecation and Sunset headers until 2027-01-01.
    */
   async resources(options: ResourcesOptions): Promise<ResourcesResponse> {
-    const { country, config } = options;
-
-    const params = new URLSearchParams();
-    params.set('country', country.toUpperCase());
-
-    if (config) {
-      if (config.scopes?.length) {
-        params.set('scopes', config.scopes.join(','));
-      }
-      if (config.populations?.length) {
-        params.set('populations', config.populations.join(','));
-      }
-      if (config.limit !== undefined) {
-        params.set('limit', config.limit.toString());
-      }
-      if (config.urgent) {
-        params.set('urgent', 'true');
-      }
-    }
-
-    return this.requestGet<ResourcesResponse>(`/v1/resources?${params.toString()}`);
+    this.warnResourcesDeprecated('resources()', 'signpost()');
+    this.requireNotDemo('resources()');
+    const { country, config, ...top } = options;
+    const filters = mergeSignpostFilters(config, top);
+    return this.transport.request<ResourcesResponse>('GET', '/v1/resources', {
+      query: { country: country.toUpperCase(), ...filters },
+    });
   }
 
   /**
-   * Get AI-ranked crisis resources based on a semantic query.
-   *
-   * @deprecated Use `signpostSmart()` instead. This method calls the deprecated `/v1/resources/smart` endpoint.
-   *
-   * @param options - Smart resources options
-   *
-   * @returns ResourcesSmartResponse with resources ranked by relevance
+   * @deprecated Use signpostSmart(). Calls /v1/resources/smart (sunset 2027-01-01).
    */
   async resourcesSmart(options: ResourcesSmartOptions): Promise<ResourcesSmartResponse> {
+    this.warnResourcesDeprecated('resourcesSmart()', 'signpostSmart()');
     const { country, query, config } = options;
-
-    const params = new URLSearchParams();
-    params.set('country', country.toUpperCase());
-    params.set('query', query);
-
-    if (config) {
-      if (config.scopes?.length) {
-        params.set('scopes', config.scopes.join(','));
-      }
-      if (config.populations?.length) {
-        params.set('populations', config.populations.join(','));
-      }
-      if (config.limit !== undefined) {
-        params.set('limit', config.limit.toString());
-      }
-    }
-
     const endpoint = this.demo ? '/v1/try/resources/smart' : '/v1/resources/smart';
-    return this.requestGet<ResourcesSmartResponse>(`${endpoint}?${params.toString()}`);
+    return this.transport.request<ResourcesSmartResponse>('GET', endpoint, {
+      query: { country: country.toUpperCase(), query, ...smartFilters(config) },
+    });
   }
 
   /**
-   * Get a single crisis resource by its database ID.
-   *
-   * @deprecated Use `signpostById()` instead. This method calls the deprecated `/v1/resources/:id` endpoint.
-   *
-   * @param resourceId - UUID of the resource
-   *
-   * @returns ResourceByIdResponse with the crisis resource
+   * @deprecated Use signpostById(). Calls /v1/resources/:id (sunset 2027-01-01).
    */
   async resourceById(resourceId: string): Promise<ResourceByIdResponse> {
-    return this.requestGet<ResourceByIdResponse>(`/v1/resources/${resourceId}`);
+    this.warnResourcesDeprecated('resourceById()', 'signpostById()');
+    return this.transport.request<ResourceByIdResponse>('GET', `/v1/resources/${encodeURIComponent(resourceId)}`);
   }
 
   /**
-   * List all countries with available crisis resources.
-   *
-   * @deprecated Use `signpostCountries()` instead. This method calls the deprecated `/v1/resources/countries` endpoint.
-   *
-   * @returns ResourcesCountriesResponse with list of supported country codes
+   * @deprecated Use signpostCountries(). Calls /v1/resources/countries (sunset 2027-01-01).
    */
   async resourcesCountries(): Promise<ResourcesCountriesResponse> {
-    return this.requestGet<ResourcesCountriesResponse>('/v1/resources/countries');
+    this.warnResourcesDeprecated('resourcesCountries()', 'signpostCountries()');
+    return this.transport.request<ResourcesCountriesResponse>('GET', '/v1/resources/countries');
+  }
+
+  private warnResourcesDeprecated(method: string, replacement: string): void {
+    warnOnce(
+      method,
+      `${method} is deprecated: the /v1/resources routes reach sunset 2027-01-01; use signpost* (${replacement}) instead.`
+    );
+  }
+
+  private requireNotDemo(method: string): void {
+    if (this.demo) {
+      throw new Error(`${method} is not available in demo mode. Use an API key.`);
+    }
   }
 
   /** Rate-limit and balance headers from the most recent response (undefined before the first call). */
   get lastResponseMeta(): ResponseMeta | undefined {
     return this.transport.lastResponseMeta;
-  }
-
-  /** GET a path that already carries its query string. */
-  private requestGet<T>(path: string): Promise<T> {
-    return this.transport.request<T>('GET', path);
   }
 
   /** Send a JSON body. */

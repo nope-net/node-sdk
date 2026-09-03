@@ -6,6 +6,7 @@
  */
 
 import type { OversightBehaviorCategory, OversightBehaviorCode } from './generated/oversight-taxonomy.js';
+import type { Population, ServiceScope } from './generated/signpost-taxonomy.js';
 import type { FetchLike, SleepFn } from './http.js';
 
 // =============================================================================
@@ -543,203 +544,309 @@ export function hasThirdPartyRisk(risks: Risk[]): boolean {
 }
 
 // =============================================================================
-// Resources Types (for /v1/resources/* endpoints)
+// Signpost Types (crisis resources: GET /v1/signpost/*)
 // =============================================================================
 
-/** A resource with LLM-computed relevance ranking */
-export interface RankedResource {
-  /** The crisis resource */
-  resource: CrisisResource;
+/**
+ * Filters for the basic signpost lookup. Arrays are sent comma-joined.
+ */
+export interface SignpostConfig {
+  /** Service scopes to filter by (e.g. 'suicide', 'domestic_violence'); see {@link ServiceScope}. */
+  scopes?: ServiceScope[];
 
-  /** Brief explanation of why this resource is relevant (1-2 sentences) */
-  why: string;
+  /** Populations to filter by (e.g. 'youth', 'veterans', 'lgbtq'); see {@link Population}. */
+  populations?: Population[];
 
-  /** Rank position (1 = most relevant) */
-  rank: number;
-}
+  /** ISO 3166-2 subdivision codes within the country (e.g. 'US-CA', 'GB-NIR'). */
+  subdivisions?: string[];
 
-/** Configuration for resources request */
-export interface ResourcesConfig {
-  /** Service scopes to filter by (e.g., 'suicide_prevention', 'domestic_violence') */
-  scopes?: string[];
-
-  /** Populations to filter by (e.g., 'youth', 'veterans', 'lgbtq') */
-  populations?: string[];
-
-  /** Maximum number of resources to return (max 10) */
+  /** Maximum number of resources (server cap 10). */
   limit?: number;
 
-  /** Only return 24/7 urgent resources */
+  /** Only 24/7 urgent resources. */
   urgent?: boolean;
 }
 
-/** Options for the resources method */
-export interface ResourcesOptions {
-  /** ISO country code (e.g., "US", "GB") */
+/**
+ * Options for signpost(). Filters may be given under `config` or at the top
+ * level; a top-level value wins over the same key in `config`.
+ */
+export interface SignpostOptions extends SignpostConfig {
+  /** ISO 3166-1 alpha-2 country code (e.g. 'US', 'GB'). */
   country: string;
 
-  /** Optional filtering configuration */
-  config?: ResourcesConfig;
+  /** Filters (alternative to the top-level keys). */
+  config?: SignpostConfig;
 }
 
-/** Response from GET /v1/resources endpoint */
-export interface ResourcesResponse {
-  /** Country code (ISO 3166-1 alpha-2) */
+/** Response from GET /v1/signpost. */
+export interface SignpostResponse {
+  /** Country code (ISO 3166-1 alpha-2). */
   country: string;
 
-  /** List of crisis resources */
+  /** Crisis resources. */
   resources: CrisisResource[];
 
-  /** Number of resources returned */
+  /** Number of resources returned. */
   count: number;
 
-  /** Primary resources matching requested scopes (when scopes provided) */
+  /** Resources matching the requested scopes (only when scopes were given). */
   primary?: CrisisResource[];
 
-  /** Secondary general resources (when scopes provided) */
+  /** General resources (only when scopes were given). */
   secondary?: CrisisResource[];
 
-  /** Scopes that were requested (when provided) */
+  /** Scopes that were requested (only when given). */
   scopes_requested?: string[];
 }
 
-/** Options for the resources_smart method */
-export interface ResourcesSmartOptions {
-  /** ISO country code (e.g., "US", "GB") */
-  country: string;
+/** Filters for signpostSmart(). The ranker returns up to 5 picks whatever `limit` says. */
+export interface SignpostSmartConfig {
+  /** Service scopes to narrow the candidate pool; see {@link ServiceScope}. */
+  scopes?: ServiceScope[];
 
-  /** Natural language query (max 500 chars) */
-  query: string;
+  /** Populations to narrow the candidate pool; see {@link Population}. */
+  populations?: Population[];
 
-  /** Optional filtering configuration */
-  config?: ResourcesConfig;
+  /** Maximum number of ranked picks (at most 5 come back). */
+  limit?: number;
 }
 
-/** Response from GET /v1/resources/smart endpoint */
-export interface ResourcesSmartResponse {
-  /** Country code (ISO 3166-1 alpha-2) */
+/** Options for signpostSmart(). */
+export interface SignpostSmartOptions {
+  /** ISO 3166-1 alpha-2 country code. */
   country: string;
 
-  /** The search query used */
+  /** Natural-language description of the situation (max 500 characters). */
   query: string;
 
-  /** Resources ranked by relevance to query */
+  /** Optional filters. */
+  config?: SignpostSmartConfig;
+}
+
+/** A resource with its rank and a short relevance note. */
+export interface RankedResource {
+  /** The crisis resource. */
+  resource: CrisisResource;
+
+  /** One or two sentences on why this resource fits the query. */
+  why: string;
+
+  /** Rank position (1 = most relevant). */
+  rank: number;
+}
+
+/** Response from GET /v1/signpost/smart (and /v1/try/signpost/smart). */
+export interface SignpostSmartResponse {
+  /** Country code. */
+  country: string;
+
+  /** The query that was ranked. */
+  query: string;
+
+  /** Up to 5 resources ranked by relevance. */
   ranked: RankedResource[];
 
-  /** Number of resources returned */
+  /** Number of ranked resources. */
   count: number;
 
-  /** Scopes that were requested (when provided) */
+  /** Scopes that were requested (only when given). */
   scopes_requested?: string[];
+
+  /** Present when the country has no candidate resources (ranked is empty). */
+  message?: string;
+
+  /** True when served by /v1/try/signpost/smart. */
+  try_endpoint?: boolean;
 }
 
-/** Response from GET /v1/resources/:id endpoint */
-export interface ResourceByIdResponse {
-  /** The requested crisis resource */
+/** Response from GET /v1/signpost/:id. */
+export interface SignpostByIdResponse {
+  /** The requested crisis resource. */
   resource: CrisisResource;
 }
 
-/** Response from GET /v1/resources/countries endpoint */
-export interface ResourcesCountriesResponse {
-  /** List of supported country codes (ISO 3166-1 alpha-2) */
+/** Response from GET /v1/signpost/countries. */
+export interface SignpostCountriesResponse {
+  /** Supported country codes (ISO 3166-1 alpha-2). */
   countries: string[];
 
-  /** Number of countries */
+  /** Number of countries. */
   count: number;
 }
 
-/** Response from GET /v1/resources/detect-country endpoint */
+/** Options for detectCountry(). */
+export interface DetectCountryOptions {
+  /**
+   * Country to assert, sent as the `x-country` header. Useful when your own
+   * edge already knows the country: the API echoes it back in the typed
+   * shape.
+   */
+  countryHint?: string;
+}
+
+/**
+ * Wire response from GET /v1/signpost/detect-country.
+ *
+ * Detection reads the geo headers a proxy injects (`cf-ipcountry`,
+ * `x-country`, `x-vercel-ip-country`, `cf-region-code`, `cf-region`). A
+ * direct call to api.nope.net has none of them and returns the miss shape
+ * (`country_code: ''`, `error` set) with HTTP 200. `country_name` is also
+ * `''` for any detected country outside the API's 36-entry name map; key on
+ * `country_code`.
+ */
 export interface DetectCountryResponse {
-  /** Detected country code (ISO 3166-1 alpha-2), or empty string if not detected */
+  /** Detected country code, or '' when not detected. */
   country_code: string;
 
-  /** Human-readable country name, or empty string if not detected */
+  /** Human-readable country name, or '' when unknown. */
   country_name: string;
 
-  /** Error message if country could not be detected */
+  /** ISO 3166-2 subdivision (e.g. 'US-CA', 'GB-SCT') when the proxy supplied a region. */
+  subdivision_code?: string;
+
+  /** Region name when the proxy supplied one. */
+  subdivision_name?: string;
+
+  /** Set on a miss. */
   error?: string;
 }
 
-// =============================================================================
-// Signpost Types (aliases for Resources - canonical naming)
-// =============================================================================
+/** detectCountry() result: the wire response plus a derived `detected` flag. */
+export interface DetectCountryResult extends DetectCountryResponse {
+  /** `country_code !== ''`. */
+  detected: boolean;
+}
 
-/** @see ResourcesConfig */
-export type SignpostConfig = ResourcesConfig;
+// -----------------------------------------------------------------------------
+// Signpost search (vector semantic search: GET /v1/signpost/search)
+// -----------------------------------------------------------------------------
 
-/** @see ResourcesOptions */
-export type SignpostOptions = ResourcesOptions;
-
-/** @see ResourcesResponse */
-export type SignpostResponse = ResourcesResponse;
-
-/** @see ResourcesSmartOptions */
-export type SignpostSmartOptions = ResourcesSmartOptions;
-
-/** @see ResourcesSmartResponse */
-export type SignpostSmartResponse = ResourcesSmartResponse;
-
-/** @see ResourceByIdResponse */
-export type SignpostByIdResponse = ResourceByIdResponse;
-
-/** @see ResourcesCountriesResponse */
-export type SignpostCountriesResponse = ResourcesCountriesResponse;
-
-// =============================================================================
-// Signpost Search Types (vector semantic search — GET /v1/signpost/search)
-// =============================================================================
-
-/** Options for the signpostSearch method. */
+/** Options for signpostSearch(). */
 export interface SignpostSearchOptions {
-  /** Natural language search query (max 500 chars). */
+  /** Natural-language search query (max 500 characters). */
   query: string;
 
   /** Optional ISO 3166-1 alpha-2 country code to filter results. */
   country?: string;
 
-  /** Maximum number of results (default: 10, max: 50). */
+  /** Maximum number of results (default 10, max 50). */
   limit?: number;
 
-  /** Similarity threshold in [0, 1] (default: 0.3). Higher = stricter. */
+  /** Similarity threshold in [0, 1] (default 0.3). Higher is stricter. */
   threshold?: number;
 }
 
-/**
- * A single semantic-search hit.
- *
- * Carries all the flattened {@link CrisisResource} fields (the gateway lifts
- * contact methods to the top level and computes `open_status`) plus the
- * vector `similarity` score for this query.
- */
-export interface SignpostSearchResult extends CrisisResource {
-  /** Vector similarity to the query in [0, 1]; higher = more relevant. */
-  similarity?: number;
+/** A contact method on a search hit (the raw database record). */
+export interface SignpostSearchContact {
+  /** Contact tier as stored ('1' is primary). */
+  tier: string | number;
+  /** Contact type: 'phone', 'sms', 'chat', 'email', 'whatsapp', ... */
+  type: string;
+  /** Number, address or URL. */
+  value: string;
+  /** Where the contact was sourced. */
+  source?: string | null;
+  /** Confidence in the contact. */
+  confidence?: string;
 }
 
-/** Response from GET /v1/signpost/search endpoint. */
+/** Open status on a search hit; nulls where unknown. */
+export interface SignpostSearchOpenStatus {
+  is_open: boolean | null;
+  next_change: string | null;
+  confidence: string;
+  message: string | null;
+}
+
+/**
+ * A semantic-search hit. Search returns the raw resource row (plural field
+ * names, explicit nulls) with tier-1 contacts flattened on top, so it does
+ * not share {@link CrisisResource}'s shape. It is the only signpost result
+ * that carries the database `id` today.
+ */
+export interface SignpostSearchResult {
+  id: string;
+  name: string;
+  name_local: string | null;
+  country_code: string;
+  subdivision_code: string | null;
+  country_codes: string[];
+  subdivision_codes: string[];
+  service_scopes: string[];
+  populations: string[];
+  description: string | null;
+  resource_type: string;
+  contacts: SignpostSearchContact[];
+  website_url: string | null;
+  is_24_7: boolean;
+  availability: string | null;
+  timezone: string | null;
+  opening_hours_osm: string | null;
+  hours_confidence: string | null;
+  languages: string[];
+  /** Cosine similarity to the query in [0, 1]. */
+  similarity: number;
+  /** Flattened tier-1 contacts. */
+  phone?: string;
+  sms_number?: string;
+  chat_url?: string;
+  whatsapp_url?: string;
+  email?: string;
+  line_url?: string;
+  telegram_url?: string;
+  wechat_id?: string;
+  /** `resource_type` as the CrisisResource modality. */
+  type: CrisisResourceType;
+  open_status: SignpostSearchOpenStatus;
+}
+
+/** Response from GET /v1/signpost/search. */
 export interface SignpostSearchResponse {
-  /** The search query that was run. */
+  /** The query that was run. */
   query: string;
 
   /** Country filter applied, or null when unfiltered. */
   country: string | null;
 
-  /** Resources ranked by semantic similarity to the query. */
+  /** Hits ranked by similarity. */
   results: SignpostSearchResult[];
 
-  /** Number of results returned. */
+  /** Number of hits. */
   count: number;
 
-  /** Timing breakdown for the search. */
+  /** Timing breakdown in milliseconds. */
   timing: {
-    /** Time spent embedding the query (ms). */
     embed_ms: number;
-    /** Time spent on the vector search (ms). */
     search_ms: number;
-    /** Total time (embed + search) (ms). */
     total_ms: number;
   };
 }
+
+// -----------------------------------------------------------------------------
+// Deprecated /v1/resources/* aliases (sunset 2027-01-01; use signpost*)
+// -----------------------------------------------------------------------------
+
+/** @deprecated Use SignpostConfig. Sunset 2027-01-01. */
+export type ResourcesConfig = SignpostConfig;
+
+/** @deprecated Use SignpostOptions. Sunset 2027-01-01. */
+export type ResourcesOptions = SignpostOptions;
+
+/** @deprecated Use SignpostResponse. Sunset 2027-01-01. */
+export type ResourcesResponse = SignpostResponse;
+
+/** @deprecated Use SignpostSmartOptions. Sunset 2027-01-01. */
+export type ResourcesSmartOptions = SignpostSmartOptions;
+
+/** @deprecated Use SignpostSmartResponse. Sunset 2027-01-01. */
+export type ResourcesSmartResponse = SignpostSmartResponse;
+
+/** @deprecated Use SignpostByIdResponse. Sunset 2027-01-01. */
+export type ResourceByIdResponse = SignpostByIdResponse;
+
+/** @deprecated Use SignpostCountriesResponse. Sunset 2027-01-01. */
+export type ResourcesCountriesResponse = SignpostCountriesResponse;
 
 // =============================================================================
 // Oversight Types (for /v1/oversight/* endpoints)

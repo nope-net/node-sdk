@@ -95,8 +95,26 @@ export type {
   ScreenRecommendedReply,
   ScreenCrisisResources,
   ScreenDebugInfo,
-  // Resources types
+  // Signpost types
   RankedResource,
+  SignpostConfig,
+  SignpostOptions,
+  SignpostResponse,
+  SignpostSmartConfig,
+  SignpostSmartOptions,
+  SignpostSmartResponse,
+  SignpostByIdResponse,
+  SignpostCountriesResponse,
+  DetectCountryOptions,
+  DetectCountryResponse,
+  DetectCountryResult,
+  // Signpost search types
+  SignpostSearchOptions,
+  SignpostSearchContact,
+  SignpostSearchOpenStatus,
+  SignpostSearchResult,
+  SignpostSearchResponse,
+  // Deprecated /v1/resources/* aliases (sunset 2027-01-01)
   ResourcesConfig,
   ResourcesOptions,
   ResourcesResponse,
@@ -104,19 +122,6 @@ export type {
   ResourcesSmartResponse,
   ResourceByIdResponse,
   ResourcesCountriesResponse,
-  DetectCountryResponse,
-  // Signpost types (canonical aliases for Resources)
-  SignpostConfig,
-  SignpostOptions,
-  SignpostResponse,
-  SignpostSmartOptions,
-  SignpostSmartResponse,
-  SignpostByIdResponse,
-  SignpostCountriesResponse,
-  // Signpost search types
-  SignpostSearchOptions,
-  SignpostSearchResult,
-  SignpostSearchResponse,
   // Ocular types
   OcularOptions,
   OcularResponse,
@@ -165,6 +170,10 @@ export type {
   OversightIngestResponse,
   TruncationWarning,
 } from './types.js';
+
+// Generated Signpost vocabularies (from the API source; see scripts/generate-taxonomy.ts)
+export type { ServiceScope, Population } from './generated/signpost-taxonomy.js';
+export { SERVICE_SCOPES, POPULATIONS } from './generated/signpost-taxonomy.js';
 
 // Generated Oversight taxonomy (from the API source; see scripts/generate-taxonomy.ts)
 export type { OversightBehaviorCode, OversightBehaviorCategory } from './generated/oversight-taxonomy.js';
