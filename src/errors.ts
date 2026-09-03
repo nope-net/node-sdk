@@ -1,104 +1,256 @@
 /**
- * NOPE SDK Errors
+ * NOPE SDK errors.
  *
- * Structured error handling for API interactions.
+ * Every error carries `statusCode` (HTTP status, absent for connection
+ * failures), `code` (the API's machine string when the body's `error` field
+ * looks like one, e.g. `insufficient_balance`), `message` (the API's human
+ * sentence when present) and `responseBody` (the raw response text).
  */
 
 /**
- * Base error class for all NOPE SDK errors.
+ * Shape of a NOPE API error body. `error` is either a machine code
+ * (`rate_limit_exceeded`) or a sentence; `message` carries the sentence when
+ * `error` is a code. Any other keys are endpoint-specific extras
+ * (`max_bytes`, `invalid_scopes`, `balance`, `upgrade_url`, ...).
+ */
+export interface ApiErrorBody {
+  error: string;
+  message?: string;
+  [key: string]: unknown;
+}
+
+export interface NopeErrorOptions {
+  /** HTTP status of the response. */
+  statusCode?: number;
+  /** Machine code from the body's `error` field, when it is one. */
+  code?: string;
+  /** Raw response body text. */
+  responseBody?: string;
+}
+
+/**
+ * Base class for all NOPE SDK errors.
  */
 export class NopeError extends Error {
   readonly statusCode?: number;
+  readonly code?: string;
   readonly responseBody?: string;
 
-  constructor(message: string, statusCode?: number, responseBody?: string) {
+  constructor(message: string, options: NopeErrorOptions = {}) {
     super(message);
     this.name = 'NopeError';
-    this.statusCode = statusCode;
-    this.responseBody = responseBody;
-
-    // Maintains proper stack trace for where our error was thrown (only available on V8)
+    this.statusCode = options.statusCode;
+    this.code = options.code;
+    this.responseBody = options.responseBody;
     if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, NopeError);
+      Error.captureStackTrace(this, new.target);
     }
   }
 
   override toString(): string {
-    if (this.statusCode) {
-      return `[${this.statusCode}] ${this.message}`;
-    }
-    return this.message;
+    return this.statusCode ? `[${this.statusCode}] ${this.message}` : this.message;
   }
 }
 
 /**
- * Authentication error (HTTP 401).
- *
- * Raised when the API key is invalid, expired, or missing.
+ * Authentication failed (HTTP 401): the API key is missing, malformed,
+ * revoked, or unknown.
  */
 export class NopeAuthError extends NopeError {
-  constructor(message = 'Invalid or missing API key', responseBody?: string) {
-    super(message, 401, responseBody);
+  constructor(message = 'Invalid or missing API key', options: Omit<NopeErrorOptions, 'statusCode'> = {}) {
+    super(message, { ...options, statusCode: 401 });
     this.name = 'NopeAuthError';
   }
+}
+
+export interface NopeValidationErrorOptions extends NopeErrorOptions {
+  /** Endpoint-specific extras from the body (everything except `error` and `message`). */
+  details?: Record<string, unknown>;
+}
+
+/**
+ * The request was rejected (HTTP 400, or 413 when the body exceeds the
+ * 512 KB limit). `details` carries the body's extra keys, for example
+ * `max_bytes`, `max_messages`, `max_content_length`, `invalid_scopes`,
+ * `hint`, `details`.
+ */
+export class NopeValidationError extends NopeError {
+  readonly details: Record<string, unknown>;
+
+  constructor(message = 'Invalid request', options: NopeValidationErrorOptions = {}) {
+    const { details, ...rest } = options;
+    super(message, { statusCode: 400, ...rest });
+    this.name = 'NopeValidationError';
+    this.details = details ?? {};
+  }
+}
+
+export interface NopeInsufficientBalanceErrorOptions extends Omit<NopeErrorOptions, 'statusCode'> {
+  balanceMills?: number;
+  requiredMills?: number;
+  formattedCurrent?: string;
+  formattedRequired?: string;
+  topupUrl?: string;
+  /** Oversight ingest only: cost per conversation. */
+  perConversationMills?: number;
+  /** Oversight ingest only: number of conversations in the rejected batch. */
+  conversations?: number;
+}
+
+/**
+ * The account balance cannot cover the call (HTTP 402). Top up at `topupUrl`.
+ */
+export class NopeInsufficientBalanceError extends NopeError {
+  readonly balanceMills?: number;
+  readonly requiredMills?: number;
+  readonly formattedCurrent?: string;
+  readonly formattedRequired?: string;
+  readonly topupUrl?: string;
+  readonly perConversationMills?: number;
+  readonly conversations?: number;
+
+  constructor(message = 'Insufficient balance', options: NopeInsufficientBalanceErrorOptions = {}) {
+    const {
+      balanceMills,
+      requiredMills,
+      formattedCurrent,
+      formattedRequired,
+      topupUrl,
+      perConversationMills,
+      conversations,
+      ...rest
+    } = options;
+    super(message, { ...rest, statusCode: 402 });
+    this.name = 'NopeInsufficientBalanceError';
+    this.balanceMills = balanceMills;
+    this.requiredMills = requiredMills;
+    this.formattedCurrent = formattedCurrent;
+    this.formattedRequired = formattedRequired;
+    this.topupUrl = topupUrl;
+    this.perConversationMills = perConversationMills;
+    this.conversations = conversations;
+  }
+}
+
+export interface NopeFeatureErrorOptions extends Omit<NopeErrorOptions, 'statusCode'> {
+  feature?: string;
+  requiredAccess?: string;
+  upgradeUrl?: string;
+}
+
+/**
+ * The account lacks access to a feature (HTTP 403).
+ *
+ * Two shapes on the wire: a gated feature (`feature`, `requiredAccess`; for
+ * example Oversight) and a paid-plan gate (`feature` is `'paid_plan'` and
+ * `upgradeUrl` points at the dashboard).
+ */
+export class NopeFeatureError extends NopeError {
+  readonly feature?: string;
+  readonly requiredAccess?: string;
+  readonly upgradeUrl?: string;
+
+  constructor(message = 'Feature not enabled for this account', options: NopeFeatureErrorOptions = {}) {
+    const { feature, requiredAccess, upgradeUrl, ...rest } = options;
+    super(message, { ...rest, statusCode: 403 });
+    this.name = 'NopeFeatureError';
+    this.feature = feature;
+    this.requiredAccess = requiredAccess;
+    this.upgradeUrl = upgradeUrl;
+  }
+
+  override toString(): string {
+    const base = super.toString();
+    return this.feature ? `${base} (feature: ${this.feature})` : base;
+  }
+}
+
+/**
+ * The resource does not exist (HTTP 404): an unknown signpost id or webhook id.
+ */
+export class NopeNotFoundError extends NopeError {
+  constructor(message = 'Not found', options: Omit<NopeErrorOptions, 'statusCode'> = {}) {
+    super(message, { ...options, statusCode: 404 });
+    this.name = 'NopeNotFoundError';
+  }
+}
+
+export interface NopeRateLimitErrorOptions extends Omit<NopeErrorOptions, 'statusCode'> {
+  retryAfter?: number;
+  limit?: number;
+  remaining?: number;
+  reset?: number;
 }
 
 /**
  * Rate limit exceeded (HTTP 429).
  *
- * Check retryAfter for when to retry.
+ * `retryAfter` is in seconds (from the `Retry-After` header, else the body's
+ * `retry_after_seconds`). The client retries 429s itself up to `maxRetries`
+ * before raising this.
  */
 export class NopeRateLimitError extends NopeError {
-  /** Milliseconds until rate limit resets */
+  /** Seconds until the limit resets. */
   readonly retryAfter?: number;
+  /** Requests allowed per window. */
+  readonly limit?: number;
+  /** Requests left in the window (0 when rate limited). */
+  readonly remaining?: number;
+  /** Window reset time as epoch milliseconds. */
+  readonly reset?: number;
 
-  constructor(
-    message = 'Rate limit exceeded',
-    retryAfter?: number,
-    responseBody?: string
-  ) {
-    super(message, 429, responseBody);
+  constructor(message = 'Rate limit exceeded', options: NopeRateLimitErrorOptions = {}) {
+    const { retryAfter, limit, remaining, reset, ...rest } = options;
+    super(message, { ...rest, statusCode: 429 });
     this.name = 'NopeRateLimitError';
     this.retryAfter = retryAfter;
+    this.limit = limit;
+    this.remaining = remaining;
+    this.reset = reset;
   }
 
   override toString(): string {
     const base = super.toString();
-    if (this.retryAfter) {
-      return `${base} (retry after ${this.retryAfter}ms)`;
-    }
-    return base;
+    return this.retryAfter !== undefined ? `${base} (retry after ${this.retryAfter}s)` : base;
   }
 }
 
-/**
- * Validation error (HTTP 400).
- *
- * Raised when the request payload is invalid.
- */
-export class NopeValidationError extends NopeError {
-  constructor(message = 'Invalid request', responseBody?: string) {
-    super(message, 400, responseBody);
-    this.name = 'NopeValidationError';
-  }
+export interface NopeServerErrorOptions extends NopeErrorOptions {
+  /** Seconds suggested by a `Retry-After` header, when one was sent. */
+  retryAfter?: number;
 }
 
 /**
- * Server error (HTTP 5xx).
- *
- * Raised when the NOPE API encounters an internal error.
+ * The API failed (HTTP 5xx other than 503). Not retried by the client: paid
+ * routes charge before the handler runs, so a blind retry could double-bill.
  */
 export class NopeServerError extends NopeError {
-  constructor(message = 'Server error', statusCode = 500, responseBody?: string) {
-    super(message, statusCode, responseBody);
+  readonly retryAfter?: number;
+
+  constructor(message = 'Server error', options: NopeServerErrorOptions = {}) {
+    const { retryAfter, ...rest } = options;
+    super(message, { statusCode: 500, ...rest });
     this.name = 'NopeServerError';
+    this.retryAfter = retryAfter;
   }
 }
 
 /**
- * Connection error.
+ * A dependency or provider is temporarily unavailable (HTTP 503).
  *
- * Raised when unable to connect to the NOPE API.
+ * Retryable: the client retries 503s itself up to `maxRetries`, waiting
+ * `retryAfter` seconds, before raising this.
+ */
+export class NopeServiceUnavailableError extends NopeServerError {
+  constructor(message = 'Service unavailable', options: Omit<NopeServerErrorOptions, 'statusCode'> = {}) {
+    super(message, { ...options, statusCode: 503 });
+    this.name = 'NopeServiceUnavailableError';
+  }
+}
+
+/**
+ * The request never produced a response: DNS, TCP, TLS failure, or the
+ * client-side timeout. Not retried by the client (see NopeServerError).
  */
 export class NopeConnectionError extends NopeError {
   readonly originalError?: Error;
@@ -107,39 +259,5 @@ export class NopeConnectionError extends NopeError {
     super(message);
     this.name = 'NopeConnectionError';
     this.originalError = originalError;
-  }
-}
-
-/**
- * Feature access denied (HTTP 403).
- *
- * Raised when the account doesn't have access to a feature (e.g., Oversight).
- * Contact NOPE to request access to the feature.
- */
-export class NopeFeatureError extends NopeError {
-  /** The feature that was denied */
-  readonly feature?: string;
-
-  /** What access level is required */
-  readonly requiredAccess?: string;
-
-  constructor(
-    message = 'Feature not enabled for this account',
-    feature?: string,
-    requiredAccess?: string,
-    responseBody?: string
-  ) {
-    super(message, 403, responseBody);
-    this.name = 'NopeFeatureError';
-    this.feature = feature;
-    this.requiredAccess = requiredAccess;
-  }
-
-  override toString(): string {
-    const base = super.toString();
-    if (this.feature) {
-      return `${base} (feature: ${this.feature})`;
-    }
-    return base;
   }
 }

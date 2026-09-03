@@ -30,12 +30,32 @@ export { NopeClient } from './client.js';
 export {
   NopeError,
   NopeAuthError,
-  NopeFeatureError,
-  NopeRateLimitError,
   NopeValidationError,
+  NopeInsufficientBalanceError,
+  NopeFeatureError,
+  NopeNotFoundError,
+  NopeRateLimitError,
   NopeServerError,
+  NopeServiceUnavailableError,
   NopeConnectionError,
 } from './errors.js';
+
+export type {
+  ApiErrorBody,
+  NopeErrorOptions,
+  NopeValidationErrorOptions,
+  NopeInsufficientBalanceErrorOptions,
+  NopeFeatureErrorOptions,
+  NopeRateLimitErrorOptions,
+  NopeServerErrorOptions,
+} from './errors.js';
+
+// Transport types
+export type { FetchLike, SleepFn, ResponseMeta } from './http.js';
+export { MAX_RETRY_WAIT_SECONDS } from './http.js';
+
+// Version
+export { SDK_VERSION } from './version.js';
 
 // Types
 export type {

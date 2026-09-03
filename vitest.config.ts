@@ -16,6 +16,7 @@ export default defineConfig({
   },
   test: {
     include: ['tests/unit/**/*.test.ts', 'tests/contract/**/*.test.ts'],
+    setupFiles: ['tests/setup-offline.ts'],
     environment: 'node',
     // One worker at a time: this suite runs on a memory-constrained box.
     fileParallelism: false,

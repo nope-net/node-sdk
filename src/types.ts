@@ -6,6 +6,8 @@
  * - WHAT type of harm (type: suicide | violence | abuse | ...)
  */
 
+import type { FetchLike, SleepFn } from './http.js';
+
 // =============================================================================
 // Core Enums / Literals
 // =============================================================================
@@ -588,24 +590,39 @@ export interface EvaluateResponse {
 /** Options for creating a NopeClient */
 export interface NopeClientOptions {
   /**
-   * Your NOPE API key (starts with 'nope_live_' or 'nope_test_').
-   * Can be undefined for local development/testing without auth.
+   * Your NOPE API key (`nope_live_...`, from dashboard.nope.net). Omit it
+   * for demo mode or for endpoints that need no key.
    */
   apiKey?: string;
 
-  /** Override the API base URL. Defaults to https://api.nope.net */
+  /** Override the API base URL. Defaults to https://api.nope.net (a trailing slash is tolerated). */
   baseUrl?: string;
 
-  /** Request timeout in milliseconds. Defaults to 30000 (30 seconds) */
+  /** Request timeout in milliseconds. Defaults to 30000 (30 seconds). */
   timeout?: number;
 
   /**
-   * Use demo/try endpoints that don't require authentication.
-   * These are rate-limited but useful for testing and evaluation.
-   * When true, uses /v1/try/evaluate instead of /v1/evaluate.
-   * Note: screen() is not available in demo mode — use evaluate() instead.
+   * Route calls to the unauthenticated `/v1/try/*` endpoints (per-IP rate
+   * limited, no key needed): evaluate, oversight.analyze, ocular and
+   * signpostSmart. Everything else throws "not available in demo mode".
    */
   demo?: boolean;
+
+  /**
+   * Retries on 429 and 503 only (both are billing-safe to retry), waiting
+   * `Retry-After` seconds, capped at 30 s per wait. Defaults to 2. Timeouts,
+   * connection errors and other 5xx are never retried.
+   */
+  maxRetries?: number;
+
+  /**
+   * Fetch implementation. Defaults to the global `fetch`. Inject a fake in
+   * tests or a wrapped fetch to add tracing.
+   */
+  fetch?: FetchLike;
+
+  /** Sleep used between retries. Defaults to setTimeout. Inject in tests. */
+  sleep?: SleepFn;
 }
 
 /** Options for the evaluate method */
