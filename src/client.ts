@@ -368,7 +368,7 @@ export class NopeClient<Demo extends boolean = false> {
   async screen(options: ScreenOptions): Promise<ScreenResponse> {
     warnOnce(
       'screen',
-      'screen() is deprecated. Use evaluate() instead ($0.003/call). screen() calls the legacy /v0/screen endpoint.'
+      'screen() is deprecated. Use evaluate() instead ($0.003/call). screen() calls the legacy /v0/screen endpoint, which carries a sunset of 2027-01-01.'
     );
 
     if (this.demo) {
