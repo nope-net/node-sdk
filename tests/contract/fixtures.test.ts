@@ -27,6 +27,7 @@ import ocularTry from './generated/ocular.try.js';
 import signpostAuthGb from './generated/signpost.auth.gb.js';
 import signpostTrySmart from './generated/signpost.try.smart.js';
 import signpostSearchAuth from './generated/signpost.search.auth.js';
+import signpostSearchAuthMixedContacts from './generated/signpost.search.auth.mixed-contacts.js';
 import signpostCountries from './generated/signpost.countries.js';
 import signpostDetectMiss from './generated/signpost.detect-country.miss.js';
 import billingBalance from './generated/billing.balance.js';
@@ -51,6 +52,7 @@ const GENERATED: Record<string, unknown> = {
   'signpost/auth.gb.json': signpostAuthGb,
   'signpost/try.smart.json': signpostTrySmart,
   'signpost/search.auth.json': signpostSearchAuth,
+  'signpost/search.auth.mixed-contacts.json': signpostSearchAuthMixedContacts,
   'signpost/countries.json': signpostCountries,
   'signpost/detect-country.miss.json': signpostDetectMiss,
   'billing/balance.json': billingBalance,
@@ -359,6 +361,7 @@ const CHECKS: Record<string, (body: Obj) => void> = {
   'signpost/auth.gb.json': checkSignpostBasic,
   'signpost/try.smart.json': checkSignpostSmart,
   'signpost/search.auth.json': checkSignpostSearch,
+  'signpost/search.auth.mixed-contacts.json': checkSignpostSearch,
   'signpost/countries.json': checkCountries,
   'signpost/detect-country.miss.json': checkDetectCountry,
   'billing/balance.json': checkBillingBalance,

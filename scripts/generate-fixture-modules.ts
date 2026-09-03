@@ -55,6 +55,7 @@ const BINDINGS: Record<string, FixtureBinding> = {
   'signpost/auth.gb.json': { type: 'SignpostResponse' },
   'signpost/try.smart.json': { type: 'SignpostSmartResponse' },
   'signpost/search.auth.json': { type: 'SignpostSearchResponse' },
+  'signpost/search.auth.mixed-contacts.json': { type: 'SignpostSearchResponse' },
   'signpost/countries.json': { type: 'SignpostCountriesResponse' },
   'signpost/detect-country.miss.json': { type: 'DetectCountryResponse' },
 

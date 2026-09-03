@@ -738,17 +738,27 @@ export interface SignpostSearchOptions {
 }
 
 /** A contact method on a search hit (the raw database record). */
+/**
+ * One contact method on a search row, as the directory stores it. Only `type`
+ * is always present: the live wire mixes `{type, value}`, `{type, url}`
+ * (chat contacts), `{label, type, value}` and tiered rows with `source` and
+ * `confidence` (fixture signpost/search.auth.mixed-contacts.json).
+ */
 export interface SignpostSearchContact {
-  /** Contact tier as stored ('1' is primary). */
-  tier: string | number;
   /** Contact type: 'phone', 'sms', 'chat', 'email', 'whatsapp', ... */
   type: string;
-  /** Number, address or URL. */
-  value: string;
+  /** Number or address; chat contacts carry `url` instead. */
+  value?: string;
+  /** URL for chat and web contacts. */
+  url?: string;
+  /** Display label, when the directory has one. */
+  label?: string;
+  /** Contact tier as stored ('1' is primary); absent on untiered rows. */
+  tier?: string | number;
   /** Where the contact was sourced. */
   source?: string | null;
   /** Confidence in the contact. */
-  confidence?: string;
+  confidence?: string | number;
 }
 
 /** Open status on a search hit; nulls where unknown. */
