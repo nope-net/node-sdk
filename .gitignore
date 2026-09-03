@@ -24,3 +24,9 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Packed tarballs
+*.tgz
+
+# Scratch files (never committed)
+___*

@@ -7,27 +7,40 @@
     "registry": "https://registry.npmjs.org",
     "access": "public"
   },
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      },
+      "default": "./dist/index.js"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "test": "SKIP_INTEGRATION=true vitest run",
-    "test:integration": "vitest run tests/integration.test.ts",
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src/",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "test:live": "vitest run -c vitest.live.config.ts",
+    "test:live:smoke": "SMOKE=1 vitest run -c vitest.live.config.ts",
+    "prepublishOnly": "pnpm build"
   },
   "keywords": [
     "safety",
@@ -45,10 +58,18 @@
     "type": "git",
     "url": "https://github.com/nope-net/node-sdk.git"
   },
+  "bugs": {
+    "url": "https://github.com/nope-net/node-sdk/issues"
+  },
   "homepage": "https://nope.net",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.10.0",
+    "eslint": "^10.9.1",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.13",
     "typescript": "^5.3.0",
+    "typescript-eslint": "^8.69.0",
     "vitest": "^1.0.0"
   }
 }

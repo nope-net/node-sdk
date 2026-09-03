@@ -3,13 +3,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { NopeClient } from '../src/client.js';
+import { NopeClient } from '../../src/client.js';
 import {
   NopeAuthError,
   NopeValidationError,
   NopeRateLimitError,
   NopeServerError,
-} from '../src/errors.js';
+} from '../../src/errors.js';
 
 // Mock fetch globally
 const mockFetch = vi.fn();

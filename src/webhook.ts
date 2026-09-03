@@ -222,12 +222,11 @@ export const Webhook = {
     // Extract signature value (remove sha256= prefix if present)
     const received = signature.replace(/^sha256=/, '');
 
-    // Constant-time comparison
-    let isValid = false;
+    // Constant-time comparison; timingSafeEqual throws when lengths differ.
+    let isValid: boolean;
     try {
       isValid = timingSafeEqual(Buffer.from(expected), Buffer.from(received));
     } catch {
-      // Lengths don't match
       isValid = false;
     }
 

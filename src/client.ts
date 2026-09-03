@@ -15,10 +15,8 @@ import {
 } from './errors.js';
 import type {
   DetectCountryResponse,
-  EvaluateConfig,
   EvaluateOptions,
   EvaluateResponse,
-  Message,
   NopeClientOptions,
   OcularOptions,
   OcularResponse,
@@ -27,7 +25,6 @@ import type {
   OversightIngestOptions,
   OversightIngestResponse,
   ResourceByIdResponse,
-  ResourcesConfig,
   ResourcesCountriesResponse,
   ResourcesOptions,
   ResourcesResponse,
@@ -36,7 +33,6 @@ import type {
   ScreenOptions,
   ScreenResponse,
   SignpostByIdResponse,
-  SignpostConfig,
   SignpostCountriesResponse,
   SignpostOptions,
   SignpostResponse,
@@ -45,6 +41,8 @@ import type {
   SignpostSmartOptions,
   SignpostSmartResponse,
 } from './types.js';
+
+import { USER_AGENT } from './version.js';
 
 const DEFAULT_BASE_URL = 'https://api.nope.net';
 const DEFAULT_TIMEOUT = 30000; // milliseconds
@@ -817,7 +815,7 @@ export class NopeClient {
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
     const headers: Record<string, string> = {
-      'User-Agent': 'nope-node/0.1.0',
+      'User-Agent': USER_AGENT,
     };
     if (this.apiKey) {
       headers['Authorization'] = `Bearer ${this.apiKey}`;
@@ -856,7 +854,7 @@ export class NopeClient {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'User-Agent': 'nope-node/0.1.0',
+      'User-Agent': USER_AGENT,
     };
     if (this.apiKey) {
       headers['Authorization'] = `Bearer ${this.apiKey}`;
