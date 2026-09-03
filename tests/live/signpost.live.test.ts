@@ -22,13 +22,20 @@ describe.sequential('signpost (live)', () => {
     expect(Array.isArray(scoped.secondary)).toBe(true);
     expect(scoped.scopes_requested).toEqual(['suicide']);
 
-    const all = await client.signpost({ country: 'GB', limit: 10 });
+    // `subdivisions` ranks rather than filters: resources tagged with the requested
+    // subdivision come first, country-wide resources next, other subdivisions last
+    // (api/lib/resources/DatabaseResourceResolver.ts, subdivision sort).
     const ni = await client.signpost({ country: 'GB', subdivisions: ['GB-NIR'], limit: 10 });
-    expect(ni.count).toBeLessThanOrEqual(all.count);
-    for (const r of ni.resources) {
+    expect(ni.count).toBe(ni.resources.length);
+    const tier = (r: { subdivision_codes?: string[] }): number => {
       const codes = r.subdivision_codes ?? [];
-      expect(codes.length === 0 || codes.includes('GB-NIR')).toBe(true);
-    }
+      if (codes.includes('GB-NIR')) return 0;
+      if (codes.length === 0) return 1;
+      return 2;
+    };
+    const tiers = ni.resources.map(tier);
+    expect([...tiers].sort((a, b) => a - b)).toEqual(tiers);
+    expect(tiers[0]).toBe(0);
   });
 
   it('row 18: smart auth -> ranked[]{rank, resource, why}, at most 5', async () => {

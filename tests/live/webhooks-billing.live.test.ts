@@ -49,8 +49,13 @@ describe.sequential('webhooks and billing (live)', () => {
       expect(rotated.secret).toMatch(/^whsec_/);
       expect(rotated.secret).not.toBe(created.secret);
     } finally {
-      const deleted = await client.webhooks.delete(created.id);
-      expect(deleted.success).toBe(true);
+      // Cleanup must not mask the first failure: report a failed delete without throwing over it.
+      try {
+        const deleted = await client.webhooks.delete(created.id);
+        expect(deleted.success).toBe(true);
+      } catch (e) {
+        console.warn(`[live] webhooks.delete(${created.id}) failed during cleanup: ${(e as Error).message}`);
+      }
     }
   });
 
