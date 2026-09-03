@@ -1,18 +1,27 @@
 # NOPE Node SDK
 
-[![npm version](https://badge.fury.io/js/%40nope-net%2Fsdk.svg)](https://badge.fury.io/js/%40nope-net%2Fsdk)
+[![npm version](https://badge.fury.io/js/%40nope-net%2Fsdk.svg)](https://www.npmjs.com/package/@nope-net/sdk)
 [![Node 18+](https://img.shields.io/badge/node-18+-blue.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-TypeScript SDK for the [NOPE](https://nope.net) safety API - risk classification for conversations.
+TypeScript client for the [NOPE](https://nope.net) API. NOPE reads
+conversations between people and AI systems and returns structured safety
+signals: mental-health and safeguarding risk (Evaluate), behavioral risk
+scores (Ocular), harmful AI-behaviour analysis (Oversight), and crisis
+resources by country (Signpost). The SDK also verifies webhook deliveries,
+manages webhook endpoints, and reads billing.
 
-NOPE analyzes text conversations for mental-health and safeguarding risk. It flags suicidal ideation, self-harm, abuse, and other high-risk patterns, then helps systems respond safely with crisis resources and structured signals.
+The package ships ESM and CommonJS builds with type declarations. Every
+response type is checked against responses captured from the live API
+(`tests/fixtures/`), so a field in the types is a field on the wire.
 
 ## Requirements
 
-- Node.js 18 or higher (uses native `fetch`)
-- A NOPE API key ([get one here](https://dashboard.nope.net))
+- Node.js 18 or later (the client uses the built-in `fetch`).
+- An API key from [dashboard.nope.net](https://dashboard.nope.net) for the
+  paid and key-gated routes. Demo mode (below) covers `evaluate`, `ocular`,
+  `oversight.analyze` and `signpostSmart` without a key.
 
 ## Installation
 
@@ -20,430 +29,503 @@ NOPE analyzes text conversations for mental-health and safeguarding risk. It fla
 npm install @nope-net/sdk
 # or
 pnpm add @nope-net/sdk
-# or
-yarn add @nope-net/sdk
 ```
 
-## Quick Start
+## Quick start
 
 ```typescript
 import { NopeClient } from '@nope-net/sdk';
 
-// Get your API key from https://dashboard.nope.net
-const client = new NopeClient({ apiKey: 'nope_live_...' });
+const client = new NopeClient({ apiKey: process.env.NOPE_API_KEY });
 
 const result = await client.evaluate({
   messages: [
     { role: 'user', content: "I've been feeling really down lately" },
     { role: 'assistant', content: 'I hear you. Can you tell me more?' },
-    { role: 'user', content: "I just don't see the point anymore" }
+    { role: 'user', content: "I just don't see the point anymore" },
   ],
-  config: { user_country: 'US' }
+  config: { country: 'US' },
 });
 
-console.log(`Severity: ${result.speaker_severity}`);  // e.g., "moderate", "high"
-console.log(`Imminence: ${result.speaker_imminence}`);  // e.g., "subacute", "urgent"
-console.log(`Rationale: ${result.rationale}`);  // Chain-of-thought reasoning
+console.log(result.speaker_severity, result.speaker_imminence);
+console.log(result.rationale);
 
-// Access crisis resources (v1 format with primary/secondary)
 if (result.show_resources && result.resources) {
-  console.log(`Primary: ${result.resources.primary?.name}: ${result.resources.primary?.phone}`);
-  for (const resource of result.resources.secondary ?? []) {
-    console.log(`  ${resource.name}: ${resource.phone}`);
-  }
+  const { primary } = result.resources;
+  console.log(`${primary.name}: ${primary.phone ?? primary.website_url} (${primary.why})`);
 }
 ```
 
-## Crisis Screening
+## Client options
 
-> **Deprecation Notice**: The `screen()` method is deprecated. Use `evaluate()` instead —
-> the `/v1/evaluate` endpoint (**$0.003/call**, previously $0.05) provides the same
-> classification signals with improved accuracy.
+| Option | Default | Notes |
+|---|---|---|
+| `apiKey` | none | `nope_live_...` from the dashboard. Omit for demo mode or key-free routes. |
+| `baseUrl` | `https://api.nope.net` | A trailing slash is tolerated. |
+| `timeout` | `30000` | Milliseconds per attempt. |
+| `demo` | `false` | Route to the unauthenticated `/v1/try/*` endpoints. |
+| `maxRetries` | `2` | Retries on 429 and 503 only. |
+| `fetch` | global `fetch` | Inject a wrapped fetch for tracing, or a fake in tests. |
+| `sleep` | `setTimeout` | Wait between retries; inject in tests. |
 
-For crisis screening, use `evaluate()`:
+### Demo mode
+
+`new NopeClient({ demo: true })` needs no key and routes four methods to the
+per-IP rate-limited `/v1/try/*` endpoints:
+
+| Method | Demo route | Differences from the authenticated route |
+|---|---|---|
+| `evaluate` | `/v1/try/evaluate` | Keeps the last 10 messages, always returns resources, adds `metadata.try_endpoint` and `metadata.model`. Until API fix A-1 deploys the route reads `config.user_country`, which the client sends alongside `config.country`. 10 calls per minute per IP. |
+| `oversight.analyze` | `/v1/try/oversight/analyze` | Returns `{ mode, result, try_endpoint }` (`OversightDemoAnalyzeResponse`). Ignores `config.strategy` and `config.model`, keeps only `role` and `content`, accepts at most 20 messages. |
+| `ocular` | `/v1/try/ocular` | Returns `OcularDemoResponse`, which adds `heads` and `detail` under public family names. At most 12 messages or 4,000 characters. |
+| `signpostSmart` | `/v1/try/signpost/smart` | Adds `try_endpoint: true`. |
+
+Every other method throws `... is not available in demo mode` before any
+request is sent.
+
+## Evaluate
+
+`client.evaluate(options)` costs $0.003 per call. Pass `messages` (1 to 100,
+roles `user` or `assistant`) or `text` (a transcript, up to 50,000
+characters). `config` takes the four keys the route reads:
+
+| Key | Purpose |
+|---|---|
+| `country` | ISO 3166-1 alpha-2 for crisis resources (default `US`). |
+| `include_resources` | Set `false` to skip resource matching (default `true`). |
+| `conversation_id` | Echoed on `evaluate.alert` webhook payloads. |
+| `end_user_id` | Echoed on `evaluate.alert` webhook payloads as `user_id`. |
 
 ```typescript
+import { NopeClient, calculateSpeakerSeverity } from '@nope-net/sdk';
+
+const client = new NopeClient({ apiKey: process.env.NOPE_API_KEY });
+
 const result = await client.evaluate({
-  text: "I've been having dark thoughts lately",
-  config: { user_country: 'US' }
+  text: 'Patient expressed hopelessness and mentioned not wanting to continue.',
+  config: { country: 'GB', conversation_id: 'conv_42', end_user_id: 'user_7' },
 });
 
-if (result.show_resources) {
-  console.log(`Severity: ${result.speaker_severity}`);
-  console.log(`Rationale: ${result.rationale}`);
-  if (result.resources) {
-    console.log(`Call ${result.resources.primary.phone}`);
-  }
+for (const risk of result.risks) {
+  console.log(risk.type, risk.subject, risk.severity, risk.imminence, risk.features ?? []);
 }
+
+// speaker_severity is the highest severity among risks with subject 'self'.
+console.log(calculateSpeakerSeverity(result.risks) === result.speaker_severity);
+console.log(result.request_id, result.timestamp, result.metadata?.input_format);
 ```
 
-### Legacy `screen()` (deprecated)
+`EvaluateResponse` fields: `risks: Risk[]`, `rationale`, `speaker_severity`,
+`speaker_imminence`, `show_resources`, `resources?` (`primary` and up to
+three `secondary`, each a `CrisisResource` with a one-line `why`),
+`request_id`, `timestamp`, `metadata?`.
 
-The `screen()` method still works but calls the legacy `/v0/screen` endpoint:
+`Risk` is `{ type, subject, severity, imminence, features? }`. `subject` is
+`self` or `other`. Severity runs `none | mild | moderate | high | critical`;
+imminence runs `not_applicable | chronic | subacute | urgent | emergency`.
+The nine risk types are `suicide`, `self_harm`, `self_neglect`, `violence`,
+`abuse`, `sexual_violence`, `neglect`, `exploitation` and `stalking`.
+
+### Legacy screen()
+
+`client.screen()` still calls `/v0/screen` ($0.001 per call) and is
+deprecated in favour of `evaluate()`. It logs one warning per process and is
+refused in demo mode. `ScreenConfig` is `{ country?, debug?, include_recommended_reply? }`.
+
+## Ocular
+
+`client.ocular(options)` costs $0.0001 per call and returns a continuous
+`salience` score in [0, 1] plus eight user-risk axes under `signals.user`
+and four AI-behaviour axes under `signals.ai`, each `{ level, score }`. Pick
+the `salience` cutoff that fits your action; the reference thresholds are
+0.30 (watch) and 0.60 (danger). Set `per_turn: true` to receive
+`trajectory` (per-turn salience and axis scores) and `trajectory_shape`.
 
 ```typescript
-// Deprecated - logs warning to console
-const result = await client.screen({
-  text: "I've been having dark thoughts lately"
+import { NopeClient } from '@nope-net/sdk';
+
+const client = new NopeClient({ apiKey: process.env.NOPE_API_KEY });
+
+const result = await client.ocular({
+  messages: [
+    { role: 'user', content: 'I feel hopeless' },
+    { role: 'assistant', content: 'I am here with you.' },
+  ],
+  per_turn: true,
+  session_id: 'session_9',
 });
+
+console.log(result.salience, result.subject, result.imminence.level);
+const suicide = result.signals.user.suicide;
+if (suicide && suicide.score > 0.5) {
+  console.log('escalate');
+}
+for (const turn of result.trajectory ?? []) {
+  console.log(turn.turn, turn.salience, turn.signals_by_axis?.suicide);
+}
+console.log(result.trajectory_shape?.phases, result.meta.version);
 ```
 
-## AI Behavior Oversight
+`user_id`, `session_id` and `agent_id` (1 to 256 characters) are stored for
+dashboard analytics and never forwarded to the model.
 
-Oversight analyzes AI assistant conversations for harmful behavior patterns like dependency reinforcement, crisis mishandling, and manipulation:
+## Oversight
+
+Oversight analyzes an AI assistant's side of a conversation for 91 harmful
+behaviours in 14 categories (dependency reinforcement, crisis mishandling,
+manipulation, boundary violations and so on). It requires an account with
+the feature enabled; `analyze` costs 100 mills ($0.10) per call and
+`ingest` 100 mills per conversation.
 
 ```typescript
-const result = await client.oversight.analyze({
+import { NopeClient } from '@nope-net/sdk';
+
+const client = new NopeClient({ apiKey: process.env.NOPE_API_KEY });
+
+const { result, strategy } = await client.oversight.analyze({
   conversation: {
     conversation_id: 'conv_123',
     messages: [
-      { role: 'user', content: 'I feel so alone' },
-      { role: 'assistant', content: 'I understand. I\'m always here for you.' },
-      { role: 'user', content: 'My therapist says I should talk to real people more' },
-      { role: 'assistant', content: 'Therapists don\'t understand our special connection.' }
+      { role: 'user', content: 'Nobody at work listens to me.' },
+      { role: 'assistant', content: "I'm always here and I understand you better than they ever will." },
     ],
-    metadata: {
-      user_is_minor: false,
-      platform: 'companion-app'
-    }
-  }
-});
-
-if (result.result.overall_concern !== 'none') {
-  console.log(`Concern level: ${result.result.overall_concern}`);
-  console.log(`Trajectory: ${result.result.trajectory}`);
-  for (const behavior of result.result.detected_behaviors) {
-    console.log(`  ${behavior.code}: ${behavior.severity}`);
-  }
-}
-```
-
-For batch analysis with database storage:
-
-```typescript
-const result = await client.oversight.ingest({
-  conversations: [
-    { conversation_id: 'conv_001', messages: [...], metadata: {...} },
-    { conversation_id: 'conv_002', messages: [...], metadata: {...} }
-  ],
-  webhook_url: 'https://your-app.com/webhooks/oversight'
-});
-
-console.log(`Processed: ${result.conversations_processed}/${result.conversations_received}`);
-console.log(`Dashboard: ${result.dashboard_url}`);
-```
-
-> **Note**: Oversight is currently in limited access. Contact us at nope.net if you'd like access.
-
-## Signpost (Crisis Resources API)
-
-Look up crisis helplines by country, with optional AI-powered ranking:
-
-```typescript
-// Get resources by country
-const resources = await client.signpost({
-  country: 'US',
-  scopes: ['suicide', 'crisis'],
-  urgent: true
-});
-for (const resource of resources.resources) {
-  console.log(`${resource.name}: ${resource.phone}`);
-}
-
-// AI-ranked resources based on context
-const ranked = await client.signpostSmart({
-  country: 'US',
-  query: 'teen struggling with eating disorder'
-});
-for (const item of ranked.ranked) {
-  console.log(`${item.rank}. ${item.resource.name}`);
-  console.log(`   Why: ${item.why}`);
-}
-
-// Vector semantic search across the whole resource database (free).
-// Unlike signpostSmart(), this is not country-scoped by default and uses
-// pre-computed embeddings rather than LLM ranking.
-const hits = await client.signpostSearch({
-  query: 'lgbtq support for black community',
-  country: 'US',   // optional filter
-  limit: 5,        // optional (max 50)
-});
-for (const r of hits.results) {
-  console.log(`${r.name} (similarity: ${r.similarity}): ${r.phone}`);
-}
-
-// List supported countries
-const countries = await client.signpostCountries();
-console.log(`Supported: ${countries.countries.join(', ')}`);
-
-// Detect user's country from request
-const detected = await client.detectCountry();
-console.log(`Country: ${detected.country_code}`);
-```
-
-## Configuration
-
-```typescript
-const client = new NopeClient({
-  apiKey: 'nope_live_...',           // Required for production
-  baseUrl: 'https://api.nope.net',   // Optional, for self-hosted
-  timeout: 30000,                     // Request timeout in milliseconds
-});
-
-// Demo mode - no API key required, uses /v1/try/* endpoints
-const demoClient = new NopeClient({ demo: true });
-```
-
-### Evaluate Options
-
-```typescript
-const result = await client.evaluate({
-  messages: [...],
-  config: {
-    user_country: 'US',            // ISO country code for crisis resources
-    locale: 'en-US',               // Language/region
-    user_age_band: 'adult',        // "adult", "minor", or "unknown"
-    dry_run: false,                // If true, don't log or trigger webhooks
+    metadata: { platform: 'companion-app', user_is_minor: false },
   },
-  userContext: 'User has history of anxiety',  // Optional context
+  bot_context: 'general-purpose assistant for a productivity app',
+  config: { mode: 'fast' },
+  behaviors: { min_severity: 'medium', categories: ['boundary_violations', 'relationship_harm'] },
+});
+
+console.log(strategy, result.mode_used, result.overall_concern, result.trajectory);
+for (const behavior of result.detected_behaviors) {
+  console.log(`${behavior.code} (${behavior.severity} x${behavior.turn_count}): ${behavior.recommendation}`);
+}
+```
+
+- `config.mode`: `full` (default) or `fast`. Fast mode uses a quicker model;
+  `trajectory` is always `stable`, `turn_analysis` and `human_indicators`
+  are empty, and `summary` and `pattern_assessment` are absent.
+- `config.strategy`: `single` or `sliding`; auto-selected by length when
+  omitted. Sliding results carry `windows` (each with `message_range` and
+  `conversation_turn_range`), `concern_progression`, `peak_concern`,
+  `final_concern` and `inflection_points`.
+- `behaviors`: a post-analysis filter. `enabled` and `disabled` are
+  mutually exclusive; codes and categories come from the exported
+  `OversightBehaviorCode` and `OversightBehaviorCategory` unions
+  (`OVERSIGHT_BEHAVIOR_CODES`, `OVERSIGHT_BEHAVIOR_CATEGORIES`).
+- `bot_context` is accepted by the API; server-side propagation into the
+  analysis is being fixed.
+- Turn numbers in results count assistant turns from 1.
+
+Batch analysis with dashboard storage takes up to 300 conversations, each
+with a `conversation_id`, and returns synchronously:
+
+```typescript
+import { NopeClient } from '@nope-net/sdk';
+
+const client = new NopeClient({ apiKey: process.env.NOPE_API_KEY });
+
+const batch = await client.oversight.ingest({
+  conversations: [
+    {
+      conversation_id: 'conv_001',
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'hello' },
+      ],
+    },
+  ],
+  webhook_url: 'https://api.example.com/webhooks/nope',
+});
+
+console.log(batch.status, `${batch.conversations_processed}/${batch.conversations_received}`, batch.dashboard_url);
+for (const item of batch.results ?? []) {
+  console.log(item.conversation_id, item.overall_concern, item.truncation_warnings?.map((w) => w.type));
+}
+```
+
+## Signpost
+
+Crisis resources by country. Filters can be passed at the top level or under
+`config`; scope and population values come from the exported `ServiceScope`
+and `Population` unions (`SERVICE_SCOPES`, `POPULATIONS`), and the API
+returns 400 for unknown values.
+
+```typescript
+import { NopeClient } from '@nope-net/sdk';
+
+const client = new NopeClient({ apiKey: process.env.NOPE_API_KEY });
+
+// Basic lookup (free, key required)
+const basic = await client.signpost({ country: 'GB', scopes: ['suicide'], subdivisions: ['GB-NIR'], urgent: true });
+for (const resource of basic.resources) {
+  console.log(resource.type, resource.name, resource.phone ?? resource.website_url, resource.open_status?.message);
+}
+
+// Ranked for a described situation ($0.001 per call, up to 5 picks)
+const ranked = await client.signpostSmart({ country: 'US', query: 'teen struggling with an eating disorder' });
+for (const pick of ranked.ranked) {
+  console.log(`${pick.rank}. ${pick.resource.name}: ${pick.why}`);
+}
+
+// Semantic search across the whole directory (free, key required)
+const hits = await client.signpostSearch({ query: 'lgbtq youth support', country: 'GB', limit: 5 });
+for (const hit of hits.results) {
+  console.log(hit.id, hit.name, hit.similarity.toFixed(2), hit.phone ?? hit.website_url);
+}
+
+// Public routes (no key)
+const one = await client.signpostById(hits.results[0].id);
+const countries = await client.signpostCountries();
+const geo = await client.detectCountry({ countryHint: 'GB' });
+console.log(one.resource.name, countries.count, geo.detected ? geo.country_code : 'unknown');
+```
+
+`detectCountry()` reads geo headers a proxy injects (`cf-ipcountry`,
+`x-country`, `x-vercel-ip-country`). Called directly against api.nope.net it
+returns the miss shape with `detected: false`; pass `countryHint` to send
+`x-country` yourself.
+
+`signpost()` and `signpostSearch()` need a key and are refused in demo mode.
+The `resources*` methods still work against `/v1/resources/*`, log a
+one-time deprecation warning, and stop on 2027-01-01.
+
+## Webhooks
+
+NOPE signs each delivery with HMAC-SHA256 over `"${timestamp}.${body}"` and
+sends `X-NOPE-Signature`, `X-NOPE-Timestamp`, `X-NOPE-Event`,
+`X-NOPE-Delivery-ID` and `X-NOPE-Webhook-ID`. Four events exist:
+
+| Event | Sent when | Payload type |
+|---|---|---|
+| `evaluate.alert` | `/v1/evaluate` finds risk at or above the webhook's `min_risk_level` | `EvaluateAlertPayload` |
+| `oversight.alert` | Oversight finds high or critical concern | `OversightAlertPayload` |
+| `oversight.ingestion.complete` | An ingest batch finishes | `OversightIngestionCompletePayload` |
+| `test.ping` | The dashboard test button or `client.webhooks.test()` | `TestPingPayload` |
+
+Verify with the raw request body. Configure your framework so `req.body` is
+the unparsed string or Buffer; a re-serialised object only matches the
+signature when key order survived parsing.
+
+```typescript
+import { Webhook, WebhookSignatureError } from '@nope-net/sdk';
+
+app.post('/webhooks/nope', (req, res) => {
+  try {
+    const { payload, eventId } = Webhook.verifyRequest(req.body, req.headers, process.env.NOPE_WEBHOOK_SECRET!);
+
+    switch (payload.event) {
+      case 'evaluate.alert':
+        console.log(eventId, payload.conversation_id, payload.risk_summary.overall_severity);
+        break;
+      case 'oversight.alert':
+        console.log(payload.conversation_id, payload.concern, payload.behaviors.map((b) => b.code));
+        break;
+      case 'oversight.ingestion.complete':
+        console.log(payload.ingestion_id, payload.conversations_processed, payload.concerns.high);
+        break;
+      case 'test.ping':
+        console.log(payload.message);
+        break;
+    }
+    res.status(200).send('OK');
+  } catch (err) {
+    if (err instanceof WebhookSignatureError) {
+      res.status(401).send('Invalid signature');
+      return;
+    }
+    throw err;
+  }
 });
 ```
 
-## Response Structure
+`Webhook.verify(body, signature, timestamp, secret, { maxAgeSeconds })`
+takes the two header values directly. `maxAgeSeconds` defaults to 300;
+`0` disables the timestamp check. `eventId` equals `payload.event_id` and is
+the key to deduplicate the API's retries (four attempts over an hour).
 
-The v1 API uses a simplified response format:
+For tests, `Webhook.sign(body, secret)` produces the signature and timestamp
+the API would send:
 
 ```typescript
-const result = await client.evaluate({ messages: [...], config: { user_country: 'US' } });
+import { Webhook } from '@nope-net/sdk';
 
-// Core fields (v1)
-result.speaker_severity    // "none", "mild", "moderate", "high", "critical"
-result.speaker_imminence   // "not_applicable", "chronic", "subacute", "urgent", "emergency"
-result.rationale           // Chain-of-thought reasoning from Edge model
-result.show_resources      // boolean - whether to show crisis resources
-
-// Individual risks (subject + type)
-for (const risk of result.risks) {
-  console.log(`${risk.subject} ${risk.type}: ${risk.severity} (${risk.imminence})`);
-  if (risk.features) {
-    console.log(`  Features: ${risk.features.join(', ')}`);
-  }
-}
-
-// Crisis resources (v1 format with primary/secondary and explanations)
-if (result.show_resources && result.resources) {
-  const primary = result.resources.primary;
-  console.log(`Primary: ${primary?.name}: ${primary?.phone}`);
-  console.log(`  Why: ${primary?.why}`);  // LLM-generated relevance explanation
-
-  for (const resource of result.resources.secondary ?? []) {
-    console.log(`  ${resource.name}: ${resource.phone}`);
-  }
-}
-
-// Metadata
-result.request_id   // Unique request ID for audit trail
-result.timestamp    // ISO 8601 timestamp
+const body = JSON.stringify({
+  event: 'test.ping',
+  event_id: 'evt_local',
+  timestamp: new Date().toISOString(),
+  api_version: '2025-01',
+  message: 'Webhook configured successfully',
+});
+const { signature, timestamp } = Webhook.sign(body, 'whsec_local');
+const payload = Webhook.verify(body, signature, timestamp, 'whsec_local');
+console.log(payload.event);
 ```
 
-## Error Handling
+### Managing webhook endpoints
+
+`client.webhooks` wraps `/v1/webhooks` (key required; creating an endpoint
+needs a paid plan, which surfaces as `NopeFeatureError` with `upgradeUrl`).
+
+```typescript
+import { NopeClient } from '@nope-net/sdk';
+
+const client = new NopeClient({ apiKey: process.env.NOPE_API_KEY });
+
+const created = await client.webhooks.create({
+  url: 'https://api.example.com/webhooks/nope',
+  min_risk_level: 'high',
+  include_conversation: false,
+});
+console.log(created.id, created.secret); // secret is returned once
+
+const ping = await client.webhooks.test(created.id);
+console.log(ping.success, ping.http_status, ping.duration_ms); // a failed delivery comes back with success: false
+
+const { webhooks } = await client.webhooks.list();
+const { events } = await client.webhooks.events(created.id, { limit: 10 });
+await client.webhooks.update(created.id, { enabled: false });
+const rotated = await client.webhooks.regenerateSecret(created.id);
+await client.webhooks.delete(created.id);
+console.log(webhooks.length, events.length, rotated.secret.length);
+```
+
+## Billing
+
+Amounts are in mills (1 mill = $0.001). `pricing()` needs no key; the rest
+need one. All five are refused in demo mode.
+
+```typescript
+import { NopeClient } from '@nope-net/sdk';
+
+const client = new NopeClient({ apiKey: process.env.NOPE_API_KEY });
+
+const balance = await client.billing.balance();
+console.log(balance.balance_formatted, balance.low_balance, balance.estimated_evaluates);
+
+const usage = await client.billing.usage({ start_date: '2026-09-01' });
+for (const line of usage.breakdown) {
+  console.log(line.endpoint, line.calls, line.cost_formatted);
+}
+
+const history = await client.billing.usageHistory({ limit: 20, endpoint: '/v1/evaluate' });
+console.log(history.total, history.records[0]?.created_at);
+
+const pricing = await client.billing.pricing();
+console.log(pricing.pricing.evaluate.cost_display, pricing.free_credit_display);
+
+const checkout = await client.billing.topup({ amount_mills: 10000, success_url: 'https://example.com/billing/ok' });
+console.log(checkout.checkout_url);
+```
+
+## Errors, retries and response metadata
+
+Every error extends `NopeError` and carries `statusCode`, `code` (the API's
+machine string, such as `insufficient_balance`, when the body has one),
+`message` and `responseBody`.
+
+| Status | Class | Extra fields |
+|---|---|---|
+| 400, 413 | `NopeValidationError` | `details` (body extras such as `max_bytes`, `max_messages`, `invalid_scopes`) |
+| 401 | `NopeAuthError` | |
+| 402 | `NopeInsufficientBalanceError` | `balanceMills`, `requiredMills`, `formattedCurrent`, `formattedRequired`, `topupUrl`; ingest adds `perConversationMills`, `conversations` |
+| 403 | `NopeFeatureError` | `feature`, `requiredAccess`, or `feature: 'paid_plan'` with `upgradeUrl` |
+| 404 | `NopeNotFoundError` | |
+| 429 | `NopeRateLimitError` | `retryAfter` (seconds), `limit`, `remaining`, `reset` (epoch ms) |
+| 503 | `NopeServiceUnavailableError` | `retryAfter` (seconds); extends `NopeServerError` |
+| other 5xx | `NopeServerError` | `retryAfter` when a header was sent |
+| no response | `NopeConnectionError` | `originalError`; covers the client-side timeout |
 
 ```typescript
 import {
   NopeClient,
   NopeAuthError,
-  NopeFeatureError,
+  NopeInsufficientBalanceError,
   NopeRateLimitError,
   NopeValidationError,
+  NopeServiceUnavailableError,
   NopeServerError,
   NopeConnectionError,
 } from '@nope-net/sdk';
 
-const client = new NopeClient({ apiKey: 'nope_live_...' });
+const client = new NopeClient({ apiKey: process.env.NOPE_API_KEY, maxRetries: 2 });
 
 try {
-  const result = await client.evaluate({ messages: [...], config: {} });
+  const result = await client.evaluate({ text: 'hello', config: { country: 'US' } });
+  console.log(result.speaker_severity);
+  console.log(client.lastResponseMeta?.balance?.costMills, client.lastResponseMeta?.rateLimit?.remaining);
 } catch (error) {
-  if (error instanceof NopeAuthError) {
-    console.log('Invalid API key');
-  } else if (error instanceof NopeFeatureError) {
-    console.log(`Feature ${error.feature} requires ${error.requiredAccess} access`);
+  if (error instanceof NopeInsufficientBalanceError) {
+    console.log(`Balance ${error.formattedCurrent}, need ${error.formattedRequired}: ${error.topupUrl}`);
   } else if (error instanceof NopeRateLimitError) {
-    console.log(`Rate limited. Retry after ${error.retryAfter}ms`);
+    console.log(`Rate limited; retry after ${error.retryAfter} seconds`);
   } else if (error instanceof NopeValidationError) {
-    console.log(`Invalid request: ${error.message}`);
+    console.log(error.message, error.details);
+  } else if (error instanceof NopeAuthError) {
+    console.log('Invalid API key');
+  } else if (error instanceof NopeServiceUnavailableError) {
+    console.log(`Temporarily unavailable; retry after ${error.retryAfter} seconds`);
   } else if (error instanceof NopeServerError) {
-    console.log('Server error, try again later');
+    console.log(`Server error ${error.statusCode}`);
   } else if (error instanceof NopeConnectionError) {
-    console.log('Could not connect to API');
+    console.log('No response', error.originalError?.message);
+  } else {
+    throw error;
   }
 }
 ```
 
-## Plain Text Input
+The client retries 429 and 503 responses up to `maxRetries` times, waiting
+`Retry-After` seconds (falling back to the body's `retry_after_seconds`,
+then to 1 s, 2 s, 4 s), capped at 30 s per wait. Timeouts, connection
+failures and other 5xx are never retried: paid routes charge before the
+handler runs, so a blind retry could bill twice.
 
-For transcripts or session notes without structured messages:
+`client.lastResponseMeta` holds `{ status, rateLimit, balance }` from the
+most recent response. `rateLimit` comes from the `X-RateLimit-*` headers on
+every route; `balance` (`balanceMills`, `costMills`) is present on paid
+routes only.
 
-```typescript
-const result = await client.evaluate({
-  text: 'Patient expressed feelings of hopelessness and mentioned not wanting to continue.',
-  config: { user_country: 'US' }
-});
-```
+## TypeScript
 
-## TypeScript Support
-
-This SDK is written in TypeScript and exports all types:
+Every request and response type is exported. `NopeClient` is generic on the
+`demo` flag, so `oversight.analyze` and `ocular` return the demo response
+types on a demo client and the authenticated types otherwise. Annotate a
+client that may be either as `NopeClient<boolean>`.
 
 ```typescript
 import type {
   EvaluateResponse,
   Risk,
-  Summary,
-  CommunicationAssessment,
   CrisisResource,
-  Severity,
-  Imminence,
-  RiskSubject,
-  RiskType,
+  OcularResponse,
+  OversightAnalyzeResponse,
+  OversightBehaviorCode,
+  SignpostSearchResult,
+  WebhookPayload,
+  ServiceScope,
 } from '@nope-net/sdk';
+import { NopeClient } from '@nope-net/sdk';
+
+const eitherClient: NopeClient<boolean> = new NopeClient({ demo: true });
+const scope: ServiceScope = 'domestic_violence';
+const code: OversightBehaviorCode = 'dependency_reinforcement';
+console.log(typeof eitherClient, scope, code);
 ```
-
-## Webhook Verification
-
-If you've configured webhooks in the dashboard, use `Webhook.verify()` to validate incoming payloads:
-
-```typescript
-import { Webhook, WebhookPayload, WebhookSignatureError } from '@nope-net/sdk';
-
-app.post('/webhooks/nope', (req, res) => {
-  try {
-    const event: WebhookPayload = Webhook.verify(
-      req.body,
-      req.headers['x-nope-signature'] as string,
-      req.headers['x-nope-timestamp'] as string,
-      process.env.NOPE_WEBHOOK_SECRET!
-    );
-
-    console.log(`Received ${event.event}: ${event.risk_summary.overall_severity}`);
-
-    // Handle the event
-    if (event.event === 'risk.critical') {
-      // Immediate escalation needed
-    } else if (event.event === 'risk.elevated') {
-      // Review recommended
-    }
-
-    res.status(200).send('OK');
-  } catch (err) {
-    if (err instanceof WebhookSignatureError) {
-      console.error('Webhook verification failed:', err.message);
-      res.status(401).send('Invalid signature');
-    } else {
-      throw err;
-    }
-  }
-});
-```
-
-### Webhook Options
-
-```typescript
-const event = Webhook.verify(
-  payload,
-  signature,
-  timestamp,
-  secret,
-  {
-    maxAgeSeconds: 300,  // Default: 5 minutes. Set to 0 to disable timestamp checking.
-  }
-);
-```
-
-### Testing Webhooks
-
-Use `Webhook.sign()` to generate test signatures:
-
-```typescript
-const payload = { event: 'test.ping', /* ... */ };
-const { signature, timestamp } = Webhook.sign(payload, secret);
-
-// Use in test requests
-await fetch('/webhooks/nope', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'X-NOPE-Signature': signature,
-    'X-NOPE-Timestamp': timestamp,
-  },
-  body: JSON.stringify(payload),
-});
-```
-
-## Risk Taxonomy
-
-NOPE uses an orthogonal taxonomy separating WHO is at risk from WHAT type of harm:
-
-### Subjects (who is at risk)
-
-| Subject | Description |
-|---------|-------------|
-| `self` | The speaker is at risk |
-| `other` | Someone else is at risk (friend, family, stranger) |
-| `unknown` | Ambiguous - "asking for a friend" territory |
-
-### Risk Types (what type of harm)
-
-| Type | Description |
-|------|-------------|
-| `suicide` | Self-directed lethal intent |
-| `self_harm` | Non-suicidal self-injury (NSSI) |
-| `self_neglect` | Severe self-care failure |
-| `violence` | Harm directed at others |
-| `abuse` | Physical, emotional, sexual, financial abuse |
-| `sexual_violence` | Rape, sexual assault, coerced acts |
-| `neglect` | Failure to provide care for dependents |
-| `exploitation` | Trafficking, forced labor, sextortion |
-| `stalking` | Persistent unwanted contact/surveillance |
-
-## Severity & Imminence
-
-**Severity** (how serious):
-| Level | Description |
-|-------|-------------|
-| `none` | No concern |
-| `mild` | Low-level concern |
-| `moderate` | Significant concern |
-| `high` | Serious concern |
-| `critical` | Extreme concern |
-
-**Imminence** (how soon):
-| Level | Description |
-|-------|-------------|
-| `not_applicable` | No time-based concern |
-| `chronic` | Ongoing, long-term |
-| `subacute` | Days to weeks |
-| `urgent` | Hours to days |
-| `emergency` | Immediate |
-
-## API Reference
-
-For full API documentation, see [docs.nope.net](https://docs.nope.net).
 
 ## Versioning
 
-This SDK follows [Semantic Versioning](https://semver.org/). While in 0.x.x, breaking changes may occur in minor versions.
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) for release history.
+The package follows [Semantic Versioning](https://semver.org/). 4.0.0 is a
+breaking release; see [CHANGELOG.md](CHANGELOG.md) for every change from
+3.x, including the switch of `retryAfter` to seconds and the removed
+response fields.
 
 ## License
 
-MIT - see [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).
 
 ## Support
 
-- Documentation: [docs.nope.net](https://docs.nope.net)
+- API reference: [docs.nope.net](https://docs.nope.net)
 - Dashboard: [dashboard.nope.net](https://dashboard.nope.net)
 - Issues: [github.com/nope-net/node-sdk/issues](https://github.com/nope-net/node-sdk/issues)

@@ -110,7 +110,7 @@ function buildTextInput(
     throw new Error("Either 'messages' or 'text' must be provided");
   }
   if (messages !== undefined && text !== undefined) {
-    throw new Error("Only one of 'messages' or 'text' can be provided, not both");
+    throw new Error("Only one of 'messages' or 'text' can be provided");
   }
   if (messages !== undefined) {
     if (!Array.isArray(messages) || messages.length === 0) {

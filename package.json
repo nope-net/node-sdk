@@ -1,7 +1,7 @@
 {
   "name": "@nope-net/sdk",
-  "version": "3.0.0",
-  "description": "TypeScript SDK for the NOPE safety API - risk classification for conversations",
+  "version": "4.0.0",
+  "description": "TypeScript client for the NOPE safety API: risk classification, behavioral risk scoring, AI-behaviour oversight, crisis resources, webhooks and billing",
   "type": "module",
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

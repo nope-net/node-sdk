@@ -914,7 +914,7 @@ export interface OversightMessage {
   context?: string;
 }
 
-/** Metadata about an Oversight conversation. Extra keys are stored, not indexed. */
+/** Metadata about an Oversight conversation. Extra keys are stored without indexing. */
 export interface OversightConversationMetadata {
   /** Hashed end-user identifier, for cross-session trajectory tracking. */
   user_id_hash?: string;
@@ -1324,7 +1324,7 @@ export interface OversightIngestResponse {
 }
 
 // =============================================================================
-// Ocular (behavioral risk assessment — POST /v1/ocular)
+// Ocular (behavioral risk assessment: POST /v1/ocular)
 // =============================================================================
 //
 // Models the post-filter customer surface the gateway emits. Individual

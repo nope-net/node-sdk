@@ -11,11 +11,11 @@
  * const client = new NopeClient({ apiKey: 'nope_live_...' });
  * const result = await client.evaluate({
  *   messages: [{ role: 'user', content: "I'm feeling down" }],
- *   config: { user_country: 'US' }
+ *   config: { country: 'US' }
  * });
  *
  * console.log(`Severity: ${result.speaker_severity}`);
- * if (result.resources?.primary) {
+ * if (result.show_resources && result.resources) {
  *   console.log(`  ${result.resources.primary.name}: ${result.resources.primary.phone}`);
  * }
  * ```
